@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Book Al Maqam Al Mahmoud for your event — masajid, weddings, fundraisers, Eid celebrations, and community programs." />
+  <title>Booking — Al Maqam Al Mahmoud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Navigation ───────────────────────────────────── -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <a href="index.html" class="nav-logo" aria-label="Al Maqam Al Mahmoud Home">
+      <span>المقام المحمود</span>
+      Al Maqam Al Mahmoud
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="booking.html" class="active">Booking</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <a href="booking.html" class="nav-book-btn">Book Us</a>
+    <button class="hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </nav>
+
+  <div class="mobile-menu" role="dialog" aria-label="Mobile navigation">
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="booking.html">Booking</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <a href="booking.html" class="btn-primary"><span>Book Us</span></a>
+  </div>
+
+  <!-- ── Booking Hero ──────────────────────────────────── -->
+  <header class="booking-hero" role="banner">
+    <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 60% 80% at 50% 40%,rgba(11,61,46,0.4) 0%,transparent 70%);"></div>
+    <div style="position:relative;z-index:1;">
+      <span class="section-eyebrow">Reserve Your Date</span>
+      <h1 class="section-title" style="font-size:clamp(2rem,4vw,3.4rem);">Booking</h1>
+      <p class="section-subtitle" style="margin-bottom:0;">
+        Select an available date from the calendar, then complete your booking request below.
+        We will confirm your reservation personally, in sha Allah.
+      </p>
+    </div>
+  </header>
+
+  <!-- ── Booking Section ───────────────────────────────── -->
+  <main class="booking-section" role="main" aria-label="Booking calendar and form">
+    <div class="booking-layout">
+
+      <!-- ── Calendar ───────────────────────────────── -->
+      <div>
+        <div class="calendar-card reveal">
+          <div class="calendar-header">
+            <button class="cal-nav-btn" id="calPrev" aria-label="Previous month">&#8249;</button>
+            <h2 class="cal-month-title" id="calMonth" aria-live="polite"></h2>
+            <button class="cal-nav-btn" id="calNext" aria-label="Next month">&#8250;</button>
+          </div>
+
+          <div class="cal-weekdays" role="row" aria-label="Days of the week">
+            <div class="cal-weekday" role="columnheader" aria-label="Sunday">Su</div>
+            <div class="cal-weekday" role="columnheader" aria-label="Monday">Mo</div>
+            <div class="cal-weekday" role="columnheader" aria-label="Tuesday">Tu</div>
+            <div class="cal-weekday" role="columnheader" aria-label="Wednesday">We</div>
+            <div class="cal-weekday" role="columnheader" aria-label="Thursday">Th</div>
+            <div class="cal-weekday" role="columnheader" aria-label="Friday">Fr</div>
+            <div class="cal-weekday" role="columnheader" aria-label="Saturday">Sa</div>
+          </div>
+
+          <div class="cal-grid" id="calGrid" role="grid" aria-label="Calendar"></div>
+
+          <div class="calendar-legend" aria-label="Calendar legend">
+            <div class="legend-item">
+              <span class="legend-dot available" aria-hidden="true"></span>
+              Available
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot unavailable" aria-hidden="true"></span>
+              Unavailable
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot selected" aria-hidden="true"></span>
+              Selected
+            </div>
+          </div>
+        </div>
+
+        <!-- Availability note -->
+        <div class="reveal" style="margin-top:20px; padding:20px 24px; border:1px solid rgba(212,175,55,0.12); background:rgba(7,31,23,0.4);">
+          <p style="font-family:'Cinzel',serif; font-size:0.62rem; letter-spacing:0.2em; text-transform:uppercase; color:rgba(212,175,55,0.6); margin-bottom:8px;">A Note on Availability</p>
+          <p style="font-family:'Cormorant Garamond',serif; font-style:italic; font-size:0.9rem; color:var(--text-body); line-height:1.7;">
+            Dates shown as available are subject to confirmation. We will contact you within 24–48 hours of your request to finalise the arrangement, in sha Allah.
+          </p>
+        </div>
+      </div>
+
+      <!-- ── Form Area ─────────────────────────────── -->
+      <div id="bookingFormWrapper">
+
+        <!-- Prompt (shown before date selected) -->
+        <div class="booking-prompt reveal" id="bookingPrompt">
+          <span class="booking-prompt-icon" lang="ar" aria-hidden="true">تاريخ</span>
+          <p class="booking-prompt-text">
+            Please select an available date from the calendar to proceed with your booking request.
+          </p>
+        </div>
+
+        <!-- Booking Form (shown after date selected) -->
+        <div class="booking-form-card" id="bookingFormCard" role="region" aria-label="Booking request form">
+
+          <!-- Selected date display -->
+          <div class="selected-date-display" id="selectedDateDisplay">
+            <div>
+              <span class="selected-date-label">Selected Date</span>
+              <span class="selected-date-value" id="selectedDateValue"></span>
+            </div>
+            <button class="change-date-btn" id="changeDateBtn" type="button" aria-label="Change selected date">
+              Change Date
+            </button>
+          </div>
+
+          <h2 class="form-title">Your Event Details</h2>
+          <p class="form-subtitle">
+            Please complete the form below and we will be in touch to confirm your booking.
+          </p>
+
+          <!--
+            ════════════════════════════════════════════════
+            GOOGLE FORMS INTEGRATION:
+            Replace the action attribute with your Google
+            Form URL, and update the name attributes of each
+            input to match your Google Form field entry IDs.
+            e.g. name="entry.123456789"
+            ════════════════════════════════════════════════
+          -->
+          <form id="mainBookingForm" novalidate>
+            <input type="hidden" id="formSelectedDate" name="selectedDate" />
+
+            <div class="form-divider" aria-hidden="true"></div>
+
+            <!-- Personal Info -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="bName">
+                  Full Name <span class="required" aria-hidden="true">*</span>
+                </label>
+                <input
+                  class="form-input"
+                  type="text"
+                  id="bName"
+                  name="fullName"
+                  placeholder="Your full name"
+                  required
+                  autocomplete="name"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="bEmail">
+                  Email Address <span class="required" aria-hidden="true">*</span>
+                </label>
+                <input
+                  class="form-input"
+                  type="email"
+                  id="bEmail"
+                  name="email"
+                  placeholder="your@email.com"
+                  required
+                  autocomplete="email"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="bPhone">
+                Phone Number <span class="required" aria-hidden="true">*</span>
+              </label>
+              <input
+                class="form-input"
+                type="tel"
+                id="bPhone"
+                name="phone"
+                placeholder="+1 (___) ___-____"
+                required
+                autocomplete="tel"
+              />
+            </div>
+
+            <div class="form-divider" aria-hidden="true"></div>
+
+            <!-- Event Info -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="bEventName">
+                  Event Name <span class="required" aria-hidden="true">*</span>
+                </label>
+                <input
+                  class="form-input"
+                  type="text"
+                  id="bEventName"
+                  name="eventName"
+                  placeholder="e.g. Annual Fundraising Gala"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="bEventType">
+                  Event Type <span class="required" aria-hidden="true">*</span>
+                </label>
+                <select class="form-select" id="bEventType" name="eventType" required>
+                  <option value="" disabled selected>Select event type</option>
+                  <option value="masjid">Masjid Program</option>
+                  <option value="wedding">Wedding / Walimah</option>
+                  <option value="fundraiser">Fundraiser / Gala</option>
+                  <option value="eid">Eid Celebration</option>
+                  <option value="mawlid">Mawlid / Seerah Event</option>
+                  <option value="community">Community Program</option>
+                  <option value="private">Private Gathering</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="bLocation">
+                Event Location <span class="required" aria-hidden="true">*</span>
+              </label>
+              <input
+                class="form-input"
+                type="text"
+                id="bLocation"
+                name="eventLocation"
+                placeholder="Venue name and city"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="bAttendees">
+                Estimated Number of Attendees
+              </label>
+              <select class="form-select" id="bAttendees" name="attendees">
+                <option value="" disabled selected>Select approximate attendance</option>
+                <option value="under50">Under 50</option>
+                <option value="50-150">50 – 150</option>
+                <option value="150-300">150 – 300</option>
+                <option value="300-500">300 – 500</option>
+                <option value="500-1000">500 – 1,000</option>
+                <option value="1000+">Over 1,000</option>
+              </select>
+            </div>
+
+            <div class="form-divider" aria-hidden="true"></div>
+
+            <div class="form-group">
+              <label class="form-label" for="bNotes">
+                Additional Notes
+              </label>
+              <textarea
+                class="form-textarea"
+                id="bNotes"
+                name="notes"
+                placeholder="Any special requests, program details, or additional information you would like us to know..."
+                rows="4"
+              ></textarea>
+            </div>
+
+            <div class="form-submit-row">
+              <button type="submit" class="btn-primary" style="width:100%; display:block; text-align:center;">
+                <span>Submit Booking Request</span>
+              </button>
+              <p class="form-note">
+                Fields marked with an asterisk are required. By submitting, you acknowledge that this is a request and not a confirmed reservation. Our team will contact you to confirm availability and finalise arrangements.
+              </p>
+            </div>
+          </form>
+        </div>
+
+      </div>
+      <!-- / bookingFormWrapper -->
+
+    </div>
+    <!-- / booking-layout -->
+  </main>
+
+  <!-- ── Footer ────────────────────────────────────────── -->
+  <footer role="contentinfo">
+    <div class="footer-inner">
+      <div class="footer-top">
+        <div>
+          <span class="footer-brand-arabic" lang="ar">المقام المحمود</span>
+          <span class="footer-brand-en">Al Maqam Al Mahmoud</span>
+          <p class="footer-tagline">
+            A nasheed group dedicated to elevating the soul through the sacred art of Islamic vocal tradition.
+          </p>
+        </div>
+        <div>
+          <p class="footer-col-title">Navigate</p>
+          <ul class="footer-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="booking.html">Booking</a></li>
+            <li><a href="contact.html">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-title">Connect</p>
+          <ul class="footer-links">
+            <li>
+              <a href="https://www.instagram.com/almaqamalmahmoud/" target="_blank" rel="noopener noreferrer">
+                Instagram
+              </a>
+            </li>
+            <li><a href="contact.html">Send a Message</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">&copy; <span id="footerYear"></span> Al Maqam Al Mahmoud. All rights reserved.</p>
+        <p class="footer-arabic-small" lang="ar" aria-hidden="true">بسم الله الرحمن الرحيم</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+  <script>
+    const y = document.getElementById('footerYear');
+    if (y) y.textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
