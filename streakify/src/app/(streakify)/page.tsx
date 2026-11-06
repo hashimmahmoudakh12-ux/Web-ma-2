@@ -31,7 +31,7 @@ export default function Home() {
           ))}
         </ul>
         <p className="mt-12 text-sm text-white/40">
-          <Link href="/admin">Admin</Link>
+          <Link href="/admin">Admin</Link> · <a href="/api/health">System check</a>
         </p>
       </div>
     </main>

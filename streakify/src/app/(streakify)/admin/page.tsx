@@ -25,7 +25,20 @@ function Pill({ ok, label }: { ok: boolean; label: string }) {
 
 async function Admin() {
   await connection();
-  if (!(await isAdmin())) return <AdminLogin />;
+  if (!(await isAdmin())) {
+    if (process.env.NODE_ENV === "production" && !process.env.ADMIN_PASSWORD) {
+      return (
+        <div className="mx-auto mt-16 max-w-md space-y-3 rounded-2xl bg-white/5 p-6">
+          <h1 className="text-2xl font-bold">Admin is locked</h1>
+          <p className="text-white/70">
+            Add an <code>ADMIN_PASSWORD</code> environment variable in Vercel (Project → Settings → Environment Variables), then redeploy.
+          </p>
+          <a className="text-amber-300 underline" href="/api/health">Open the system check</a>
+        </div>
+      );
+    }
+    return <AdminLogin />;
+  }
   const repo = getRepo();
   const cafes = await repo.listCafes();
   const rows = await Promise.all(

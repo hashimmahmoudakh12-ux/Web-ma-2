@@ -15,10 +15,10 @@ function siteKeyFor(host: string): string | null {
   if (ROOT_HOST.endsWith(".vercel.app")) return null; // no wildcard subdomains on vercel.app
   if (hostname.endsWith(`.${ROOT_HOST}`)) {
     const sub = hostname.slice(0, -(ROOT_HOST.length + 1));
-    return sub.includes(".") ? null : `slug:${sub}`;
+    return sub.includes(".") ? null : `s~${sub}`;
   }
   if (hostname.endsWith(".vercel.app") || hostname === "127.0.0.1") return null; // previews
-  return `host:${hostname}`; // a café's custom domain
+  return `h~${hostname}`; // a café's custom domain
 }
 
 export function proxy(request: NextRequest) {
@@ -33,7 +33,7 @@ export function proxy(request: NextRequest) {
   const match = url.pathname.match(/^\/c\/([a-z0-9-]+)(\/.*)?$/);
   if (match) {
     headers.set("x-cafe-base", `/c/${match[1]}`);
-    url.pathname = `/site/slug:${match[1]}${match[2] ?? ""}`;
+    url.pathname = `/site/s~${match[1]}${match[2] ?? ""}`;
     return NextResponse.rewrite(url, { request: { headers } });
   }
 
