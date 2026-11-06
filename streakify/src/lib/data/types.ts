@@ -17,7 +17,44 @@ export type Cafe = {
   brand: Brand;
   program: Program;
   counterPinHash: string | null;
+  ownerPasswordHash: string | null;
+  ownerEmail: string | null;
   posProvider: "none" | "toast";
+  posConfig: Record<string, unknown>;
+};
+
+export type CafePatch = Partial<
+  Pick<Cafe, "name" | "customDomain" | "timezone" | "brand" | "program" | "counterPinHash" | "ownerPasswordHash" | "ownerEmail" | "posProvider" | "posConfig">
+>;
+
+export type NewCafe = Pick<Cafe, "slug" | "name" | "timezone" | "currency" | "brand" | "program" | "isDemo"> & {
+  counterPinHash: string;
+  ownerPasswordHash: string;
+  ownerEmail: string | null;
+};
+
+/** Raw rows for dashboards and reports (stats are computed in lib/stats.ts). */
+export type VisitRow = { id: string; customerId: string; localDate: string; createdAt: string; verified: boolean };
+export type RewardRow = {
+  id: string;
+  customerId: string;
+  kind: Reward["kind"];
+  name: string;
+  valueCents: number;
+  costCents: number;
+  status: Reward["status"];
+  earnedLocalDate: string;
+  redeemedLocalDate: string | null;
+};
+export type SmsLogEntry = {
+  cafeId: string;
+  customerId: string | null;
+  phone: string;
+  dedupeKey: string;
+  body: string;
+  status: "sending" | "sent" | "dry_run" | "failed";
+  providerId?: string | null;
+  error?: string | null;
 };
 
 export type Customer = StreakState & {
@@ -87,6 +124,7 @@ export type DemoDataset = {
     valueCents: number;
     costCents: number;
     earnedAt: string;
+    earnedLocalDate: string;
     redeemedAt: string | null;
     redeemedLocalDate: string | null;
   }[];
@@ -128,4 +166,31 @@ export interface Repo {
 
   /** Wipes the demo café's customers and loads a fresh dataset. Demo cafés only. */
   replaceDemoData(cafeId: string, data: DemoDataset): Promise<void>;
+
+  // ---- phase 2: customer page + leaderboard
+  getCustomerByToken(cafeId: string, token: string): Promise<Customer | null>;
+  updateCustomerPrefs(cafeId: string, customerId: string, prefs: { leaderboardOptIn?: boolean; smsOptIn?: boolean; smsConsentText?: string | null }): Promise<void>;
+  listCustomers(cafeId: string): Promise<Customer[]>;
+  /** Privacy request: removes a customer and all their visits/rewards. */
+  deleteCustomer(cafeId: string, customerId: string): Promise<void>;
+  /** Visits with local_date in [from, to] (inclusive). */
+  listVisits(cafeId: string, from: string, to: string): Promise<VisitRow[]>;
+
+  // ---- phase 3/4: dashboard, admin, reports
+  /** Rewards earned OR redeemed with a local date in [from, to]. */
+  listRewardActivity(cafeId: string, from: string, to: string): Promise<RewardRow[]>;
+  updateCafe(cafeId: string, patch: CafePatch): Promise<Cafe>;
+  createCafe(input: NewCafe): Promise<Cafe>;
+  grantReward(cafeId: string, customerId: string, reward: { kind: Reward["kind"]; name: string; valueCents: number; costCents: number }, now: Date, localDate: string): Promise<void>;
+  /** Returns true the first time it's called for (cafe, job, period); false afterwards. */
+  claimJob(cafeId: string, job: string, period: string): Promise<boolean>;
+
+  // ---- phase 5: texts
+  /** Reserves a text before sending. Returns null if this dedupeKey was already used. */
+  claimSms(entry: SmsLogEntry): Promise<string | null>;
+  finishSms(id: string, result: { status: SmsLogEntry["status"]; providerId?: string | null; error?: string | null }): Promise<void>;
+  optOutPhoneEverywhere(phone: string): Promise<number>;
+
+  // ---- phase 6: POS
+  markVisitVerified(cafeId: string, visitId: string, posOrderId: string): Promise<void>;
 }

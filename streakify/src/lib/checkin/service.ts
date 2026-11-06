@@ -13,11 +13,15 @@ import { PRIVACY_VERSION, smsConsentText } from "../privacy";
 import { type Clock, type StreakEvent, checkIn, levelIndexFor, progressFor } from "../streak/engine";
 import { eventLines, nextTimeLine, progressLine, riskLine, savedTodayLine, totalSavedLine } from "../streak/messages";
 import { formatTime, localDate } from "../time";
+import { verifyVisitInBackground } from "../pos";
 
 export type RewardView = { id: string; name: string; valueLabel: string; kind: Reward["kind"]; isNew: boolean };
 
 export type CheckInView = {
   customerId: string;
+  publicToken: string;
+  personalUrl?: string;
+  qrSvg?: string;
   firstName: string;
   isNewMember: boolean;
   levelName: string;
@@ -68,6 +72,7 @@ async function buildView(
   const p = progressFor(customer.streakVisits, cafe.program);
   return {
     customerId: customer.id,
+    publicToken: customer.publicToken,
     firstName: customer.firstName,
     isNewMember: ctx.isNewMember,
     levelName: p.level.name,
@@ -107,8 +112,9 @@ export async function checkInCustomer(cafe: Cafe, customerId: string, now = new 
 
     const earnedBefore = new Set((await repo.listAvailableRewards(cafe.id, customer.id)).map((r) => r.id));
     const levelAfter = cafe.program.levels[levelIndexFor(outcome.state.streakVisits, cafe.program.levels)];
+    let visitId: string;
     try {
-      await repo.applyCheckIn({
+      ({ visitId } = await repo.applyCheckIn({
         cafeId: cafe.id,
         customerId: customer.id,
         expectedVersion: customer.version,
@@ -123,11 +129,13 @@ export async function checkInCustomer(cafe: Cafe, customerId: string, now = new 
         },
         rewards: outcome.rewards,
         events: outcome.events,
-      });
+      }));
     } catch (e) {
       if (e instanceof ConflictError) continue; // someone else just saved; reload and retry
       throw e;
     }
+
+    verifyVisitInBackground(cafe, visitId, now, customer.phone);
 
     const leveledUp = [...outcome.events].reverse().find((e) => e.type === "level_up");
     const updated = { ...customer, ...outcome.state, version: customer.version + 1 };

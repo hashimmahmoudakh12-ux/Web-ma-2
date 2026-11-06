@@ -9,6 +9,7 @@ import { Suspense } from "react";
 import { SHOWCASE } from "@/lib/demo/generate";
 import { privacyNotice, smsConsentText } from "@/lib/privacy";
 import { resolveCafe } from "@/lib/tenant";
+import { monthlyLeaderboard } from "@/lib/leaderboard";
 import { isCounterUnlocked } from "./actions";
 import { Counter } from "./Counter";
 
@@ -18,6 +19,7 @@ async function CounterLoader({ params }: PageProps<"/site/[site]/counter">) {
   const cafe = await resolveCafe(site);
   if (!cafe) notFound();
   const unlocked = await isCounterUnlocked(site);
+  const leaderboard = unlocked ? await monthlyLeaderboard(cafe) : [];
   return (
     <Counter
       siteKey={site}
@@ -31,6 +33,7 @@ async function CounterLoader({ params }: PageProps<"/site/[site]/counter">) {
         smsConsent: smsConsentText(cafe.name),
         leaderboardPrize: cafe.program.leaderboardPrize ?? null,
       }}
+      leaderboard={leaderboard.map(({ rank, firstName, visits }) => ({ rank, firstName, visits }))}
       showcase={cafe.isDemo ? SHOWCASE.map(({ display, firstName, story }) => ({ display, firstName, story })) : []}
     />
   );

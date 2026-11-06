@@ -12,6 +12,11 @@ import { parseProgram } from "../program";
 import type { StreakState } from "../streak/engine";
 import {
   type Cafe,
+  type CafePatch,
+  type NewCafe,
+  type RewardRow,
+  type SmsLogEntry,
+  type VisitRow,
   type CheckInWrite,
   ConflictError,
   type Customer,
@@ -37,7 +42,10 @@ function toCafe(r: Row): Cafe {
     brand: parseBrand(r.brand),
     program: parseProgram(r.program),
     counterPinHash: r.counter_pin_hash,
+    ownerPasswordHash: r.owner_password_hash ?? null,
+    ownerEmail: r.owner_email ?? null,
     posProvider: r.pos_provider,
+    posConfig: r.pos_config ?? {},
   };
 }
 
@@ -277,6 +285,7 @@ export class SupabaseRepo implements Repo {
               cost_cents: r.costCents,
               status: r.redeemedAt ? "redeemed" : "available",
               earned_at: r.earnedAt,
+              earned_local_date: r.earnedLocalDate,
               redeemed_at: r.redeemedAt,
               redeemed_local_date: r.redeemedLocalDate,
             })),
@@ -284,5 +293,183 @@ export class SupabaseRepo implements Repo {
         ).error,
       );
     }
+  }
+
+  // ---------------------------------------------------------------- phase 2+
+
+  async getCustomerByToken(cafeId: string, token: string) {
+    if (!/^[a-f0-9]{32}$/.test(token)) return null;
+    const { data, error } = await this.db
+      .from("customers").select(CUSTOMER_COLUMNS).eq("cafe_id", cafeId).eq("public_token", token).maybeSingle();
+    fail(error);
+    return data ? toCustomer(data) : null;
+  }
+
+  async updateCustomerPrefs(cafeId: string, customerId: string, prefs: { leaderboardOptIn?: boolean; smsOptIn?: boolean; smsConsentText?: string | null }) {
+    const patch: Row = {};
+    if (prefs.leaderboardOptIn !== undefined) patch.leaderboard_opt_in = prefs.leaderboardOptIn;
+    if (prefs.smsOptIn !== undefined) {
+      patch.sms_opt_in = prefs.smsOptIn;
+      patch.sms_opt_in_at = prefs.smsOptIn ? new Date().toISOString() : null;
+      patch.sms_consent_text = prefs.smsOptIn ? (prefs.smsConsentText ?? null) : null;
+    }
+    fail((await this.db.from("customers").update(patch).eq("cafe_id", cafeId).eq("id", customerId)).error);
+  }
+
+  /** Reads every row, 1000 at a time (Supabase's page size). */
+  private async all(build: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+    const out: Row[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await build(from, from + 999);
+      fail(error);
+      out.push(...(data ?? []));
+      if (!data || data.length < 1000) return out;
+    }
+  }
+
+  async deleteCustomer(cafeId: string, customerId: string) {
+    fail((await this.db.from("customers").delete().eq("cafe_id", cafeId).eq("id", customerId)).error);
+  }
+
+  async listCustomers(cafeId: string) {
+    const rows = await this.all((a, b) =>
+      this.db.from("customers").select(CUSTOMER_COLUMNS).eq("cafe_id", cafeId).order("created_at").range(a, b),
+    );
+    return rows.map(toCustomer);
+  }
+
+  async listVisits(cafeId: string, from: string, to: string): Promise<VisitRow[]> {
+    const rows = await this.all((a, b) =>
+      this.db
+        .from("visits").select("id, customer_id, local_date, created_at, verified")
+        .eq("cafe_id", cafeId).gte("local_date", from).lte("local_date", to)
+        .order("created_at").range(a, b),
+    );
+    return rows.map((r) => ({ id: r.id, customerId: r.customer_id, localDate: r.local_date, createdAt: r.created_at, verified: r.verified }));
+  }
+
+  async listRewardActivity(cafeId: string, from: string, to: string): Promise<RewardRow[]> {
+    const rows = await this.all((a, b) =>
+      this.db
+        .from("rewards")
+        .select("id, customer_id, kind, name, value_cents, cost_cents, status, earned_local_date, redeemed_local_date")
+        .eq("cafe_id", cafeId)
+        .or(`and(earned_local_date.gte.${from},earned_local_date.lte.${to}),and(redeemed_local_date.gte.${from},redeemed_local_date.lte.${to})`)
+        .order("id").range(a, b),
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      customerId: r.customer_id,
+      kind: r.kind,
+      name: r.name,
+      valueCents: r.value_cents,
+      costCents: r.cost_cents,
+      status: r.status,
+      earnedLocalDate: r.earned_local_date,
+      redeemedLocalDate: r.redeemed_local_date,
+    }));
+  }
+
+  async updateCafe(cafeId: string, patch: CafePatch) {
+    const row: Row = {};
+    if (patch.name !== undefined) row.name = patch.name;
+    if (patch.customDomain !== undefined) row.custom_domain = patch.customDomain;
+    if (patch.timezone !== undefined) row.timezone = patch.timezone;
+    if (patch.brand !== undefined) row.brand = patch.brand;
+    if (patch.program !== undefined) row.program = patch.program;
+    if (patch.counterPinHash !== undefined) row.counter_pin_hash = patch.counterPinHash;
+    if (patch.ownerPasswordHash !== undefined) row.owner_password_hash = patch.ownerPasswordHash;
+    if (patch.ownerEmail !== undefined) row.owner_email = patch.ownerEmail;
+    if (patch.posProvider !== undefined) row.pos_provider = patch.posProvider;
+    if (patch.posConfig !== undefined) row.pos_config = patch.posConfig;
+    const { data, error } = await this.db.from("cafes").update(row).eq("id", cafeId).select("*").single();
+    if (error?.code === "23505") throw new Error("Another café already uses that domain");
+    fail(error);
+    return toCafe(data!);
+  }
+
+  async createCafe(input: NewCafe) {
+    const { data, error } = await this.db
+      .from("cafes")
+      .insert({
+        slug: input.slug,
+        name: input.name,
+        timezone: input.timezone,
+        currency: input.currency,
+        is_demo: input.isDemo,
+        brand: input.brand,
+        program: input.program,
+        counter_pin_hash: input.counterPinHash,
+        owner_password_hash: input.ownerPasswordHash,
+        owner_email: input.ownerEmail,
+      })
+      .select("*")
+      .single();
+    if (error?.code === "23505") throw new Error("That subdomain is already taken");
+    fail(error);
+    return toCafe(data!);
+  }
+
+  async grantReward(cafeId: string, customerId: string, reward: { kind: Reward["kind"]; name: string; valueCents: number; costCents: number }, now: Date, localDate: string) {
+    fail(
+      (
+        await this.db.from("rewards").insert({
+          cafe_id: cafeId,
+          customer_id: customerId,
+          kind: reward.kind,
+          name: reward.name,
+          value_cents: reward.valueCents,
+          cost_cents: reward.costCents,
+          earned_at: now.toISOString(),
+          earned_local_date: localDate,
+        })
+      ).error,
+    );
+  }
+
+  async claimJob(cafeId: string, job: string, period: string) {
+    const { error } = await this.db.from("job_runs").insert({ cafe_id: cafeId, job, period });
+    if (error?.code === "23505") return false;
+    fail(error);
+    return true;
+  }
+
+  async claimSms(entry: SmsLogEntry) {
+    const { data, error } = await this.db
+      .from("sms_log")
+      .insert({
+        cafe_id: entry.cafeId,
+        customer_id: entry.customerId,
+        phone_e164: entry.phone,
+        dedupe_key: entry.dedupeKey,
+        body: entry.body,
+        status: entry.status,
+      })
+      .select("id")
+      .single();
+    if (error?.code === "23505") return null;
+    fail(error);
+    return String(data!.id);
+  }
+
+  async finishSms(id: string, result: { status: SmsLogEntry["status"]; providerId?: string | null; error?: string | null }) {
+    fail(
+      (await this.db.from("sms_log").update({ status: result.status, provider_id: result.providerId ?? null, error: result.error ?? null }).eq("id", Number(id)))
+        .error,
+    );
+  }
+
+  async optOutPhoneEverywhere(phone: string) {
+    const { data, error } = await this.db
+      .from("customers")
+      .update({ sms_opt_in: false, sms_opt_in_at: null })
+      .eq("phone_e164", phone).eq("sms_opt_in", true)
+      .select("id");
+    fail(error);
+    return data?.length ?? 0;
+  }
+
+  async markVisitVerified(cafeId: string, visitId: string, posOrderId: string) {
+    fail((await this.db.from("visits").update({ verified: true, pos_order_id: posOrderId }).eq("cafe_id", cafeId).eq("id", visitId)).error);
   }
 }

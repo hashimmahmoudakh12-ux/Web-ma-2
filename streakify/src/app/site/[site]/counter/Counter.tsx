@@ -11,6 +11,7 @@
  * After a result it automatically goes back to the phone screen so the next
  * customer can use it.
  */
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { CafeLogo } from "@/components/CafeLogo";
 import { Keypad, formatTyped } from "@/components/Keypad";
@@ -39,17 +40,22 @@ const RESULT_TIMEOUT_MS = 45_000;
 const SIGNUP_TIMEOUT_MS = 120_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+type Leader = { rank: number; firstName: string; visits: number };
+
 export function Counter({
   siteKey,
   unlocked,
   cafe,
   showcase,
+  leaderboard,
 }: {
   siteKey: string;
   unlocked: boolean;
   cafe: CafeInfo;
   showcase: { display: string; firstName: string; story: string }[];
+  leaderboard: Leader[];
 }) {
+  const router = useRouter();
   const [step, setStep] = useState<Step>(unlocked ? { kind: "phone" } : { kind: "locked" });
   const [digits, setDigits] = useState("");
   const [pending, startTransition] = useTransition();
@@ -63,9 +69,10 @@ export function Counter({
     const t = setTimeout(() => {
       setDigits("");
       setStep({ kind: "phone" });
+      router.refresh();
     }, timeout);
     return () => clearTimeout(t);
-  }, [step, touch]);
+  }, [step, touch, router]);
 
   function handleResult(r: CheckInResult) {
     setDigits("");
@@ -90,6 +97,7 @@ export function Counter({
   const home = () => {
     setDigits("");
     setStep({ kind: "phone" });
+    router.refresh(); // pick up the latest leaderboard
   };
 
   return (
@@ -121,6 +129,8 @@ export function Counter({
             setDigits={setDigits}
             pending={pending}
             tagline={cafe.tagline}
+            leaderboard={leaderboard}
+            prize={cafe.leaderboardPrize}
             onSubmit={() => run(() => submitPhone(siteKey, digits), handleResult)}
           />
         )}
@@ -206,12 +216,16 @@ function PhoneStep({
   setDigits,
   pending,
   tagline,
+  leaderboard,
+  prize,
   onSubmit,
 }: {
   digits: string;
   setDigits: (d: string) => void;
   pending: boolean;
   tagline: string | null;
+  leaderboard: Leader[];
+  prize: string | null;
   onSubmit: () => void;
 }) {
   const ready = digits.length === 10;
@@ -226,6 +240,7 @@ function PhoneStep({
         >
           {digits ? formatTyped(digits) : <span className="text-brand-muted/50">(___) ___-____</span>}
         </p>
+        <MiniLeaderboard entries={leaderboard.slice(0, 5)} prize={prize} />
       </div>
       <div className="mx-auto w-full max-w-sm">
         <Keypad
@@ -254,6 +269,27 @@ type SignUpForm = {
   smsOptIn: boolean;
   leaderboardOptIn: boolean;
 };
+
+function MiniLeaderboard({ entries, prize }: { entries: Leader[]; prize: string | null }) {
+  if (!entries.length) return null;
+  return (
+    <div className="mt-6 rounded-2xl bg-brand-surface p-4 text-left">
+      <p className="font-semibold">🏆 This month&apos;s leaderboard</p>
+      {prize && <p className="text-sm text-brand-muted">#1 wins: {prize}</p>}
+      <ol className="mt-2 space-y-1">
+        {entries.map((e) => (
+          <li key={e.rank} className="flex justify-between">
+            <span>
+              <span className="inline-block w-6 text-brand-primary">{e.rank}.</span>
+              {e.firstName}
+            </span>
+            <span className="text-brand-muted">{e.visits} {e.visits === 1 ? "visit" : "visits"}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 function SignUpStep({
   cafe,
@@ -463,6 +499,16 @@ function ResultStep({ siteKey, view: initial, onDone }: { siteKey: string; view:
           </div>
         )}
         {error && <p className="text-red-300">{error}</p>}
+
+        {view.qrSvg && (
+          <div className="flex items-center gap-4 rounded-2xl bg-brand-surface p-4">
+            <div data-url={view.personalUrl} className="h-28 w-28 shrink-0 overflow-hidden rounded-lg bg-white p-1" dangerouslySetInnerHTML={{ __html: view.qrSvg }} />
+            <p className="text-brand-muted">
+              <span className="block text-lg font-semibold text-brand-text">Your rewards page</span>
+              Scan with your phone camera to see your streak, savings and the leaderboard anytime.
+            </p>
+          </div>
+        )}
 
         <button type="button" onClick={onDone} className="w-full rounded-2xl bg-brand-text/10 py-4 text-xl">
           Done

@@ -3,7 +3,27 @@
 Streak-based loyalty for coffee shops. One app serves every café: each café gets its own
 subdomain (`sanaacafe.streakify.com`), its own logo, colors and rewards, and its own data.
 
-**Status: Phase 1 done.** That covers the database, the counter check-in tablet, the streak rules, savings messages and demo mode.
+**Status: all 6 phases built.**
+
+| Phase | What | Where |
+|---|---|---|
+| 1 | Database, counter check-in, streak rules, savings messages, demo mode | `/counter` |
+| 2 | Customer page (personal link via QR), progress bar, countdown, monthly leaderboard | `/me/<token>`, counter |
+| 3 | Owner dashboard: visits per day, top regulars, rewards given, **profit view**, edit rewards & colors, delete a customer | `/owner`, `/owner/settings` |
+| 4 | Your admin page: all cafés, stats, PDF reports, add café, monthly report email | `streakify.com/admin` |
+| 5 | “Streak ends tomorrow” texts via Twilio, opted-in customers only, STOP handling | daily job + `/api/twilio/inbound` |
+| 6 | Toast: background purchase verification after each check-in | `src/lib/pos/toast.ts` |
+
+Phases 4–6 switch on when you add their keys (see `.env.example`). Until then emails/texts are logged, not sent, so nothing goes out by accident.
+
+### Logins (change them!)
+| Who | Where | Default |
+|---|---|---|
+| Counter tablet | `/counter` | Sana'a PIN `2580`, demo café needs none |
+| Café owner | `/owner` | Sana'a `sanaa-owner`, demo café is open |
+| You | `/admin` | `ADMIN_PASSWORD` env var (`admin` when running locally) |
+
+Change owner passwords and PINs from your admin page → café → *Café settings*.
 
 ---
 
@@ -50,7 +70,7 @@ npm run lint
 ## 2. Connect the real database (Supabase)
 
 1. Create a project at supabase.com.
-2. Go to **SQL Editor**, paste all of `supabase/migrations/0001_init.sql`, and click **Run**.
+2. Go to **SQL Editor**. Paste all of `supabase/migrations/0001_init.sql` and click **Run**. Then do the same with `0002_phases_2_to_6.sql`.
 3. Copy `.env.example` to `.env.local` and fill it in. You'll find the URL and **service_role** key under Project Settings → API. Generate a session secret with:
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -68,12 +88,17 @@ npm run lint
 ## 3. Deploy (Vercel + GitHub)
 
 1. Import the GitHub repo in Vercel and set **Root Directory = `streakify`** (the repo root holds another website).
-2. Add environment variables: `NEXT_PUBLIC_ROOT_DOMAIN=streakify.com`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`.
-3. In Vercel → Domains, add `streakify.com` and the wildcard `*.streakify.com`. A wildcard needs Vercel's nameservers on the domain.
-4. To set up a custom domain later (e.g. `rewards.sanaacafe.com`):
+2. Add the environment variables from `.env.example`:
+   - `NEXT_PUBLIC_ROOT_DOMAIN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`, `ADMIN_PASSWORD` and `CRON_SECRET`;
+   - plus Resend, Twilio and Toast keys when you're ready.
+
+   To show a demo without a database, set `ALLOW_MEMORY_DB=true` instead of the Supabase keys. The demo data resets whenever Vercel restarts the server, and different server copies may each hold their own data, so it's for pitches only.
+3. `vercel.json` schedules the daily job (texts, plus monthly reports on the 1st–3rd). Vercel runs it automatically.
+4. In Vercel → Domains, add `streakify.com` and the wildcard `*.streakify.com`. A wildcard needs Vercel's nameservers on the domain.
+5. To set up a custom domain later (e.g. `rewards.sanaacafe.com`):
    - add it in Vercel → Domains;
    - have the café add the CNAME that Vercel shows;
-   - set `cafes.custom_domain = 'rewards.sanaacafe.com'` in Supabase.
+   - type the domain into the admin page → café → *Café settings*.
 
    No code changes are needed.
 
@@ -81,7 +106,10 @@ npm run lint
 - Set the café's real time zone in the `cafes.timezone` column. It's `America/New_York` for now, and weeks and birthdays use it.
 - Put the logo at `public/cafes/sanaacafe/logo.png`. Until then the name is shown in gold.
 - In Toast, create a discount named **"Streak Reward"** with an open amount. The cashier applies it when the tablet says so.
-- Check the reward prices and costs in `cafes.program` (pastry $4.50/$1.20 cost, drink $6/$1.50 cost). Phase 3 adds a screen for editing them.
+- Check the reward prices and ingredient costs in the owner dashboard → *Edit rewards & look*. The pastry is set to $4.50 (costs $1.20) and the drink to $6 (costs $1.50).
+- Set the owner's email on the admin page so the monthly PDF reaches them.
+- Texts: in Twilio, register for US A2P 10DLC (required for business texting). Then set the inbound webhook to `https://<your domain>/api/twilio/inbound`.
+- Toast: apply for Standard API access. Then put the restaurant GUID and the "Streak Reward" discount GUID in the admin page → café → *Café settings*. This code is untested against a live Toast account, so try it in Toast's sandbox first.
 
 ---
 
@@ -153,7 +181,27 @@ npm run lint
 
 ---
 
-## 7. Known limits in phase 1 (planned)
-- The PIN only has a 1-second delay on wrong guesses. Add proper rate limiting before many cafés go live.
-- The "Your streak ends tomorrow, that's $Y you'll lose" message is built and tested, but nothing shows it yet: right after a check-in the streak is safe. Phase 2 shows it on the customer page, and phase 5 sends it by text.
-- Check-ins are trusted, not yet verified against Toast (phase 6).
+### Files added in phases 2–6
+| File | In simple terms |
+|---|---|
+| `supabase/migrations/0002_phases_2_to_6.sql` | Adds owner login/email, text log, monthly-job log, reward dates. |
+| `src/lib/auth.ts`, `src/lib/session.ts` | PIN/password checking and the signed login cookies for tablet, owner and admin. |
+| `src/lib/leaderboard.ts` | This month's visit ranking, opted-in first names only. |
+| `src/lib/stats.ts` | All dashboard numbers, including the profit view math. |
+| `src/lib/report.ts` | Draws the monthly PDF. |
+| `src/lib/email.ts` | Sends email through Resend. |
+| `src/lib/sms.ts` | Twilio texts: consent check, no duplicates, STOP signature check. |
+| `src/lib/jobs.ts` | The daily job: reminder texts, plus the leaderboard prize and report email at the start of each month. |
+| `src/lib/pos/toast.ts`, `src/lib/pos/index.ts` | Toast login + order lookup; verifies visits after the customer is done. |
+| `src/lib/urls.ts` | Builds correct links for subdomains, custom domains and `/c/` links. |
+| `app/site/[site]/me/[token]/*` | The customer's personal page and their settings toggles. |
+| `app/site/[site]/owner/*` | Owner login, dashboard, settings editor, delete-customer tool. |
+| `app/(streakify)/admin/*` | Your admin page. |
+| `app/api/cron/daily`, `app/api/twilio/inbound`, `app/api/report/...` | The daily job, Twilio's reply webhook and PDF downloads. |
+| `components/VisitsChart.tsx`, `Leaderboard.tsx`, `Countdown.tsx` | Chart, leaderboard list and live countdown. |
+| `vercel.json` | Tells Vercel to run the daily job at 16:00 UTC. |
+
+## 7. Known limits
+- Wrong-password lockouts are tracked per server instance. For a big rollout, move them into the database or Vercel KV.
+- Toast and Twilio code follows their docs but hasn't run against live accounts. Test with sandbox credentials first.
+- The profit view is an estimate: repeat visits × average order. It can't know which visits would have happened anyway.

@@ -12,6 +12,7 @@ const ROOT_HOST = ROOT.split(":")[0];
 function siteKeyFor(host: string): string | null {
   const hostname = host.split(":")[0].toLowerCase();
   if (hostname === ROOT_HOST || hostname === `www.${ROOT_HOST}`) return null; // Streakify itself
+  if (ROOT_HOST.endsWith(".vercel.app")) return null; // no wildcard subdomains on vercel.app
   if (hostname.endsWith(`.${ROOT_HOST}`)) {
     const sub = hostname.slice(0, -(ROOT_HOST.length + 1));
     return sub.includes(".") ? null : `slug:${sub}`;

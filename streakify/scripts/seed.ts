@@ -11,7 +11,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
-import { hashPin } from "../src/lib/counter-auth";
+import { hashSecret } from "../src/lib/auth";
 import { seedCafes } from "../src/lib/demo/cafes";
 import { generateDemoData } from "../src/lib/demo/generate";
 import { SupabaseRepo } from "../src/lib/data/supabase-repo";
@@ -48,10 +48,10 @@ async function main() {
         console.log(`${cafe.name} already exists (use --force to overwrite its settings)`);
       }
     } else {
-      const ins = await db.from("cafes").insert({ ...row, counter_pin_hash: hashPin(cafe.counterPin) }).select("id").single();
+      const ins = await db.from("cafes").insert({ ...row, counter_pin_hash: hashSecret(cafe.counterPin), owner_password_hash: hashSecret(cafe.ownerPassword), owner_email: cafe.ownerEmail }).select("id").single();
       if (ins.error) throw ins.error;
       id = ins.data.id;
-      console.log(`Created ${cafe.name} (counter PIN ${cafe.counterPin})`);
+      console.log(`Created ${cafe.name} (counter PIN ${cafe.counterPin}, owner password "${cafe.ownerPassword}")`);
     }
 
     if (cafe.isDemo) {

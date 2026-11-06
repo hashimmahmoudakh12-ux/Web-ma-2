@@ -98,3 +98,27 @@ export function zonedInstant(date: string, hour: number, minute: number, timeZon
   const asLocal = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"));
   return new Date(guess.getTime() - (asLocal - guess.getTime()));
 }
+
+/** First and last day of the month containing `date`. */
+export function monthRange(date: string): { from: string; to: string } {
+  const from = `${date.slice(0, 7)}-01`;
+  const [y, m] = from.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from, to: `${date.slice(0, 7)}-${String(last).padStart(2, "0")}` };
+}
+
+/** "2026-11" -> "2026-10" */
+export function previousMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
+
+/** "2026-11" -> "November 2026" */
+export function formatMonth(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "long", year: "numeric" });
+}
+
+/** "Nov 6" */
+export function formatShortDay(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+}

@@ -125,6 +125,7 @@ export function generateDemoData(program: Program, timeZone: string, now = new D
           valueCents: r.valueCents,
           costCents: r.costCents,
           earnedAt: at.toISOString(),
+          earnedLocalDate: day,
           redeemedAt: null,
           redeemedLocalDate: null,
         });

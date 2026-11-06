@@ -18,6 +18,8 @@ export type CafeSeed = {
   currency: string;
   isDemo: boolean;
   counterPin: string; // only used by the seed script, stored hashed
+  ownerPassword: string; // café owner dashboard login, stored hashed
+  ownerEmail: string | null; // where the monthly report is emailed
   brand: Brand;
   program: Program;
 };
@@ -30,6 +32,8 @@ export const sanaaCafe: CafeSeed = {
   currency: "USD",
   isDemo: false,
   counterPin: "2580", // change this after setup!
+  ownerPassword: "sanaa-owner", // change this after setup!
+  ownerEmail: null, // set from your admin page
   brand: {
     logoUrl: "/cafes/sanaacafe/logo.png",
     colors: {
@@ -72,6 +76,10 @@ export const sanaaCafe: CafeSeed = {
     surpriseReward: { enabled: true, chance: 0.05, name: "Free cookie", valueCents: 300, costCents: 60 },
     birthdayReward: { enabled: true, windowDays: 7, name: "Free birthday drink", valueCents: 600, costCents: 150 },
     leaderboardPrize: "A free bag of Yemeni coffee beans",
+    leaderboardPrizeValueCents: 1800,
+    leaderboardPrizeCostCents: 700,
+    averageTicketCents: 750,
+    smsRemindersEnabled: true,
   },
 };
 
@@ -82,6 +90,8 @@ export const demoCafe: CafeSeed = {
   currency: "USD",
   isDemo: true,
   counterPin: "0000",
+  ownerPassword: "demo",
+  ownerEmail: null,
   brand: {
     logoUrl: null,
     colors: {

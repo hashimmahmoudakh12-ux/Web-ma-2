@@ -54,8 +54,14 @@ export const programSchema = z
         windowDays: z.number().int().min(0).default(7),
       })
       .optional(),
-    /** Prize for #1 on the monthly leaderboard (phase 2). */
+    /** Prize for #1 on the monthly leaderboard. */
     leaderboardPrize: z.string().optional(),
+    leaderboardPrizeValueCents: money.default(0),
+    leaderboardPrizeCostCents: money.default(0),
+    /** Average order size. Used to estimate extra revenue from repeat visits. */
+    averageTicketCents: money.default(700),
+    /** Send "your streak ends tomorrow" texts (only to people who opted in). */
+    smsRemindersEnabled: z.boolean().default(true),
   })
   .superRefine((p, ctx) => {
     if (p.levels[0].minVisits !== 0) {
