@@ -8,6 +8,8 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { getRepo } from "@/lib/data";
 import { twilioConfigured } from "@/lib/sms";
+import { pushConfigured } from "@/lib/push";
+import { appleWalletConfigured, googleWalletConfigured } from "@/lib/wallet";
 import { formatMoney } from "@/lib/money";
 import { monthlyStats } from "@/lib/report";
 import { isAdmin } from "@/lib/session";
@@ -46,6 +48,9 @@ async function Admin() {
           <Pill ok={twilioConfigured()} label="Texts" />
           <Pill ok={Boolean(process.env.RESEND_API_KEY && process.env.REPORT_FROM_EMAIL)} label="Email" />
           <Pill ok={Boolean(process.env.TOAST_CLIENT_ID)} label="Toast" />
+          <Pill ok={pushConfigured()} label="Push" />
+          <Pill ok={appleWalletConfigured()} label="Apple Wallet" />
+          <Pill ok={googleWalletConfigured()} label="Google Wallet" />
           <form action={adminLogout}><button className="ml-2 text-sm text-white/60">Log out</button></form>
         </div>
       </header>

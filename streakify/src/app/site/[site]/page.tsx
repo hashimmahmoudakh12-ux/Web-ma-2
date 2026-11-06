@@ -29,8 +29,8 @@ async function Home({ params }: PageProps<"/site/[site]">) {
         )}
         {program.levels.slice(1).map((l) => (
           <li key={l.key} className="rounded-xl bg-brand-surface p-4">
-            <span className="font-semibold text-brand-primary">{l.name}</span>
-            <span className="text-brand-muted"> · {l.minVisits} visits</span>
+            <span className="font-semibold text-brand-primary">{l.icon} {l.name}</span>
+            <span className="text-brand-muted"> · {l.minXp.toLocaleString()} XP</span>
             {l.reward && <div>{l.reward.name} ({formatMoney(l.reward.valueCents, cafe.currency)} value)</div>}
             {l.perk && <div className="capitalize">{l.perk}</div>}
           </li>

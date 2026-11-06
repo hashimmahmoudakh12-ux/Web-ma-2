@@ -28,3 +28,10 @@ export function publicCafeUrl(cafe: { slug: string; customDomain: string | null 
   }
   return `http://localhost:3000/c/${cafe.slug}${path}`;
 }
+
+/** "https://host" of the current request (behind Vercel's proxy too). */
+export function requestOrigin(req: Request): string {
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
+  const proto = req.headers.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}

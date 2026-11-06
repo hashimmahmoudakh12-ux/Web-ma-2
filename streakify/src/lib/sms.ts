@@ -18,6 +18,7 @@ import { formatMoney } from "./money";
 import { streakRisk } from "./streak/engine";
 import { formatDay } from "./time";
 import { publicCafeUrl } from "./urls";
+import { pushToCustomer } from "./push";
 
 export function twilioConfigured() {
   return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID));
@@ -62,10 +63,26 @@ export function reminderText(cafe: Cafe, c: Customer, atRiskCents: number, endsO
 
 /** Sends "your streak ends tomorrow" texts for one café. */
 export async function runStreakReminders(cafe: Cafe, now = new Date()) {
-  const result = { checked: 0, sent: 0, dryRun: 0, failed: 0, skipped: 0 };
+  const result = { checked: 0, sent: 0, dryRun: 0, failed: 0, skipped: 0, pushes: 0 };
   if (!cafe.program.smsRemindersEnabled || cafe.isDemo) return result;
   const repo = getRepo();
-  const customers = (await repo.listCustomers(cafe.id)).filter((c) => c.smsOptIn); // consent check
+  const all = await repo.listCustomers(cafe.id);
+
+  // Push notifications (home-screen app). Having a subscription = they allowed it.
+  for (const c of all) {
+    const risk = streakRisk(c, cafe.program, { now, timeZone: cafe.timezone });
+    if (!risk || risk.daysLeft !== 1 || risk.saverWillCover) continue;
+    if (!(await repo.listPushSubscriptions(cafe.id, c.id)).length) continue;
+    if (!(await repo.claimJob(cafe.id, `push-risk:${c.id}`, risk.endsOn))) continue;
+    result.pushes += await pushToCustomer(cafe.id, c.id, {
+      title: `🔥 Your ${c.streakWeeks}-week streak ends tomorrow`,
+      body: `That's ${formatMoney(risk.atRiskCents, cafe.currency)} you'll lose. Stop by ${cafe.name}!`,
+      url: publicCafeUrl(cafe, `/me/${c.publicToken}`),
+      tag: "streak-risk",
+    });
+  }
+
+  const customers = all.filter((c) => c.smsOptIn); // consent check
   for (const c of customers) {
     result.checked++;
     const risk = streakRisk(c, cafe.program, { now, timeZone: cafe.timezone });

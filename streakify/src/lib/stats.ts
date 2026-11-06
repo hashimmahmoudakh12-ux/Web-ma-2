@@ -82,7 +82,7 @@ export function computeStats(
   }
 
   const byId = new Map(customers.map((c) => [c.id, c]));
-  const levelName = (c: Customer) => cafe.program.levels[levelIndexFor(c.streakVisits, cafe.program.levels)].name;
+  const levelName = (c: Customer) => cafe.program.levels[levelIndexFor(c.xp, cafe.program.levels)].name;
   const topRegulars = [...perCustomer.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
@@ -92,7 +92,7 @@ export function computeStats(
     });
 
   const levelCounts = cafe.program.levels.map((l) => ({ level: l.name, count: 0 }));
-  for (const c of customers) levelCounts[levelIndexFor(c.streakVisits, cafe.program.levels)].count++;
+  for (const c of customers) levelCounts[levelIndexFor(c.xp, cafe.program.levels)].count++;
 
   const extraRevenueCents = repeatVisits * cafe.program.averageTicketCents;
   return {

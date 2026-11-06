@@ -9,7 +9,8 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { parseBrand } from "../brand";
 import { parseProgram } from "../program";
-import type { StreakState } from "../streak/engine";
+import { normalizeGame, type StreakState } from "../streak/engine";
+import { referralCode } from "./memory-repo";
 import {
   type Cafe,
   type CafePatch,
@@ -17,7 +18,9 @@ import {
   type RewardRow,
   type SmsLogEntry,
   type VisitRow,
-  type CheckInWrite,
+  type CustomerWrite,
+  type PushSubscriptionRow,
+  type Squad,
   ConflictError,
   type Customer,
   type DemoDataset,
@@ -59,7 +62,12 @@ function toCustomer(r: Row): Customer {
     leaderboardOptIn: r.leaderboard_opt_in,
     smsOptIn: r.sms_opt_in,
     createdAt: r.created_at,
+    updatedAt: r.updated_at ?? r.created_at,
     version: r.version,
+    referralCode: r.referral_code,
+    squadId: r.squad_id ?? null,
+    xp: r.xp ?? 0,
+    game: normalizeGame(r.game),
     streakVisits: r.streak_visits,
     streakWeeks: r.streak_weeks,
     totalVisits: r.total_visits,
@@ -77,6 +85,8 @@ function toCustomer(r: Row): Customer {
 
 function stateColumns(s: StreakState): Row {
   return {
+    xp: s.xp,
+    game: s.game,
     streak_visits: s.streakVisits,
     streak_weeks: s.streakWeeks,
     total_visits: s.totalVisits,
@@ -105,12 +115,16 @@ function toReward(r: Row): Reward {
   };
 }
 
+function toSquad(r: Row): Squad {
+  return { id: r.id, cafeId: r.cafe_id, name: r.name, code: r.code, streakWeeks: r.streak_weeks, lastCompleteWeek: r.last_complete_week };
+}
+
 function fail(error: { message: string } | null): void {
   if (error) throw new Error(`Database error: ${error.message}`);
 }
 
 const CUSTOMER_COLUMNS =
-  "id, cafe_id, phone_e164, first_name, public_token, leaderboard_opt_in, sms_opt_in, created_at, version, streak_visits, streak_weeks, total_visits, last_visit_at, last_visit_week, week_visits, settled_week, saver_month, savers_used_in_month, birthday_reward_year, birthday_month, birthday_day";
+  "id, cafe_id, xp, game, referral_code, squad_id, updated_at, phone_e164, first_name, public_token, leaderboard_opt_in, sms_opt_in, created_at, version, streak_visits, streak_weeks, total_visits, last_visit_at, last_visit_week, week_visits, settled_week, saver_month, savers_used_in_month, birthday_reward_year, birthday_month, birthday_day";
 
 export class SupabaseRepo implements Repo {
   readonly kind = "supabase" as const;
@@ -153,9 +167,25 @@ export class SupabaseRepo implements Repo {
   }
 
   async createCustomer(input: NewCustomer) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await this.insertCustomer(input, referralCode());
+      } catch (e) {
+        if (e instanceof Error && e.message === "REFERRAL_CODE_TAKEN") continue;
+        throw e;
+      }
+    }
+    throw new Error("Could not create a referral code");
+  }
+
+  private async insertCustomer(input: NewCustomer, code: string) {
+    const game = normalizeGame(null);
+    game.referredBy = input.referredBy ?? null;
     const { data, error } = await this.db
       .from("customers")
       .insert({
+        referral_code: code,
+        game,
         cafe_id: input.cafeId,
         phone_e164: input.phone,
         first_name: input.firstName,
@@ -171,13 +201,16 @@ export class SupabaseRepo implements Repo {
       })
       .select(CUSTOMER_COLUMNS)
       .single();
-    if (error?.code === "23505") throw new DuplicatePhoneError(); // unique violation
+    if (error?.code === "23505") {
+      if (error.message.includes("referral")) throw new Error("REFERRAL_CODE_TAKEN");
+      throw new DuplicatePhoneError(); // same phone already joined
+    }
     fail(error);
     return toCustomer(data!);
   }
 
-  async applyCheckIn(w: CheckInWrite) {
-    const { data, error } = await this.db.rpc("apply_check_in", {
+  async applyUpdate(w: CustomerWrite) {
+    const { data, error } = await this.db.rpc("apply_customer_update", {
       p_cafe_id: w.cafeId,
       p_customer_id: w.customerId,
       p_expected_version: w.expectedVersion,
@@ -185,10 +218,106 @@ export class SupabaseRepo implements Repo {
       p_visit: w.visit,
       p_rewards: w.rewards,
       p_events: w.events,
+      p_meta: w.meta,
     });
     if (error?.message.includes("STREAKIFY_CONFLICT")) throw new ConflictError();
     fail(error);
-    return { visitId: data as string };
+    return { visitId: (data as string | null) ?? null };
+  }
+
+  async findCustomerByReferralCode(cafeId: string, code: string) {
+    const { data, error } = await this.db.from("customers").select(CUSTOMER_COLUMNS).eq("cafe_id", cafeId).eq("referral_code", code.toUpperCase()).maybeSingle();
+    fail(error);
+    return data ? toCustomer(data) : null;
+  }
+
+  async getCustomerById(customerId: string) {
+    if (!/^[0-9a-f-]{36}$/.test(customerId)) return null;
+    const { data, error } = await this.db.from("customers").select(CUSTOMER_COLUMNS).eq("id", customerId).maybeSingle();
+    fail(error);
+    return data ? toCustomer(data) : null;
+  }
+
+  async getCafeById(cafeId: string) {
+    const { data, error } = await this.db.from("cafes").select("*").eq("id", cafeId).maybeSingle();
+    fail(error);
+    return data ? toCafe(data) : null;
+  }
+
+  // ---- squads
+  async createSquad(cafeId: string, name: string, code: string): Promise<Squad> {
+    const { data, error } = await this.db.from("squads").insert({ cafe_id: cafeId, name, code }).select("*").single();
+    if (error?.code === "23505") throw new Error("Code taken");
+    fail(error);
+    return toSquad(data!);
+  }
+  async getSquad(cafeId: string, squadId: string) {
+    const { data, error } = await this.db.from("squads").select("*").eq("cafe_id", cafeId).eq("id", squadId).maybeSingle();
+    fail(error);
+    return data ? toSquad(data) : null;
+  }
+  async getSquadByCode(cafeId: string, code: string) {
+    const { data, error } = await this.db.from("squads").select("*").eq("cafe_id", cafeId).eq("code", code.toUpperCase()).maybeSingle();
+    fail(error);
+    return data ? toSquad(data) : null;
+  }
+  async listSquadMembers(cafeId: string, squadId: string) {
+    const { data, error } = await this.db.from("customers").select(CUSTOMER_COLUMNS).eq("cafe_id", cafeId).eq("squad_id", squadId);
+    fail(error);
+    return (data ?? []).map(toCustomer);
+  }
+  async setCustomerSquad(cafeId: string, customerId: string, squadId: string | null) {
+    fail((await this.db.from("customers").update({ squad_id: squadId }).eq("cafe_id", cafeId).eq("id", customerId)).error);
+  }
+  async completeSquadWeek(squadId: string, week: string) {
+    const { data, error } = await this.db.rpc("complete_squad_week", { p_squad_id: squadId, p_week: week });
+    fail(error);
+    return (data as number | null) ?? null;
+  }
+
+  // ---- web push
+  async savePushSubscription(cafeId: string, customerId: string, sub: PushSubscriptionRow) {
+    fail(
+      (await this.db.from("push_subscriptions").upsert({ cafe_id: cafeId, customer_id: customerId, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, { onConflict: "endpoint" }))
+        .error,
+    );
+  }
+  async listPushSubscriptions(cafeId: string, customerId: string) {
+    const { data, error } = await this.db.from("push_subscriptions").select("endpoint, p256dh, auth").eq("cafe_id", cafeId).eq("customer_id", customerId);
+    fail(error);
+    return (data ?? []) as PushSubscriptionRow[];
+  }
+  async deletePushSubscription(endpoint: string) {
+    fail((await this.db.from("push_subscriptions").delete().eq("endpoint", endpoint)).error);
+  }
+
+  // ---- Apple Wallet
+  async registerWalletDevice(deviceLibraryId: string, passTypeId: string, serial: string, pushToken: string) {
+    const existing = await this.db
+      .from("wallet_registrations").select("serial")
+      .eq("device_library_id", deviceLibraryId).eq("pass_type_id", passTypeId).eq("serial", serial).maybeSingle();
+    fail(existing.error);
+    fail(
+      (
+        await this.db
+          .from("wallet_registrations")
+          .upsert({ device_library_id: deviceLibraryId, pass_type_id: passTypeId, serial, push_token: pushToken }, { onConflict: "device_library_id,pass_type_id,serial" })
+      ).error,
+    );
+    return !existing.data;
+  }
+  async unregisterWalletDevice(deviceLibraryId: string, passTypeId: string, serial: string) {
+    fail((await this.db.from("wallet_registrations").delete().eq("device_library_id", deviceLibraryId).eq("pass_type_id", passTypeId).eq("serial", serial)).error);
+  }
+  async listWalletSerials(deviceLibraryId: string, passTypeId: string) {
+    const { data, error } = await this.db.from("wallet_registrations").select("serial").eq("device_library_id", deviceLibraryId).eq("pass_type_id", passTypeId);
+    fail(error);
+    return (data ?? []).map((r) => r.serial as string);
+  }
+  async listWalletPushTokens(serial: string) {
+    const { data, error } = await this.db.from("wallet_registrations").select("push_token, pass_type_id").eq("serial", serial);
+    fail(error);
+    return (data ?? []).map((r) => ({ pushToken: r.push_token as string, passTypeId: r.pass_type_id as string }));
   }
 
   async listAvailableRewards(cafeId: string, customerId: string) {
@@ -234,6 +363,7 @@ export class SupabaseRepo implements Repo {
 
     // Deleting customers cascades to their visits, rewards and events.
     fail((await this.db.from("customers").delete().eq("cafe_id", cafeId)).error);
+    fail((await this.db.from("squads").delete().eq("cafe_id", cafeId)).error);
 
     const inserted = await this.db
       .from("customers")
@@ -249,6 +379,7 @@ export class SupabaseRepo implements Repo {
           sms_opt_in: c.smsOptIn,
           leaderboard_opt_in: c.leaderboardOptIn,
           created_at: c.createdAt,
+          referral_code: referralCode(),
           ...stateColumns(c.state),
         })),
       )
@@ -267,6 +398,7 @@ export class SupabaseRepo implements Repo {
         source: "demo",
         streak_visits_after: v.streakVisitsAfter,
         level_after: v.levelAfter,
+        xp: v.xp,
       }));
       fail((await this.db.from("visits").insert(chunk)).error);
     }
@@ -292,6 +424,19 @@ export class SupabaseRepo implements Repo {
           )
         ).error,
       );
+    }
+    await this.insertDemoSquads(cafeId, data, ids);
+  }
+
+  private async insertDemoSquads(cafeId: string, data: DemoDataset, ids: string[]) {
+    for (const q of data.squads ?? []) {
+      const { data: row, error } = await this.db
+        .from("squads")
+        .insert({ cafe_id: cafeId, name: q.name, code: q.code, streak_weeks: q.streakWeeks, last_complete_week: q.lastCompleteWeek })
+        .select("id")
+        .single();
+      fail(error);
+      fail((await this.db.from("customers").update({ squad_id: row!.id }).in("id", q.members.map((i) => ids[i]))).error);
     }
   }
 

@@ -41,8 +41,8 @@ describe("stats / profit view", () => {
 
   it("counts repeat visits and reward cost", () => {
     const customers = [
-      { id: "a", createdAt: "2026-10-05T14:00:00Z", firstName: "A", streakVisits: 3, streakWeeks: 3, smsOptIn: true },
-      { id: "b", createdAt: "2026-11-03T14:00:00Z", firstName: "B", streakVisits: 2, streakWeeks: 1, smsOptIn: false },
+      { id: "a", createdAt: "2026-10-05T14:00:00Z", firstName: "A", xp: 300, streakVisits: 3, streakWeeks: 3, smsOptIn: true },
+      { id: "b", createdAt: "2026-11-03T14:00:00Z", firstName: "B", xp: 200, streakVisits: 2, streakWeeks: 1, smsOptIn: false },
     ] as Customer[];
     const v = (customerId: string, localDate: string): VisitRow => ({ id: Math.random().toString(), customerId, localDate, createdAt: `${localDate}T14:00:00Z`, verified: false });
     const visits = [v("a", "2026-11-02"), v("a", "2026-11-09"), v("b", "2026-11-03"), v("b", "2026-11-05")];
@@ -63,7 +63,7 @@ describe("stats / profit view", () => {
   it("works on a full demo month", () => {
     const now = new Date("2026-11-20T12:00:00-05:00");
     const data = generateDemoData(program, cafe.timezone, now);
-    const customers = data.customers.map((c, i) => ({ ...c.state, id: String(i), cafeId: "c1", phone: c.phone, firstName: c.firstName, publicToken: "t", leaderboardOptIn: true, smsOptIn: c.smsOptIn, createdAt: c.createdAt, version: 0 }));
+    const customers = data.customers.map((c, i) => ({ ...c.state, id: String(i), cafeId: "c1", phone: c.phone, firstName: c.firstName, publicToken: "t", leaderboardOptIn: true, smsOptIn: c.smsOptIn, createdAt: c.createdAt, updatedAt: c.createdAt, version: 0, referralCode: "X", squadId: null }));
     const visits = data.visits.map((x, i) => ({ id: String(i), customerId: String(x.customerIndex), localDate: x.localDate, createdAt: x.createdAt, verified: false }));
     const rewards = data.rewards.map((r, i) => ({ id: String(i), customerId: String(r.customerIndex), kind: r.kind as RewardRow["kind"], name: r.name, valueCents: r.valueCents, costCents: r.costCents, status: (r.redeemedAt ? "redeemed" : "available") as RewardRow["status"], earnedLocalDate: r.earnedLocalDate, redeemedLocalDate: r.redeemedLocalDate }));
     const s = computeStats(cafe, customers, visits, rewards, "2026-11-01", "2026-11-30");

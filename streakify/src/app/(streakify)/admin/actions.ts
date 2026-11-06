@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkAdminPassword, hashSecret, throttle } from "@/lib/auth";
 import { getRepo } from "@/lib/data";
-import { sanaaCafe } from "@/lib/demo/cafes";
+import { starterProgram } from "@/lib/demo/cafes";
 import { sendEmail } from "@/lib/email";
 import { runDailyJobs } from "@/lib/jobs";
 import { renderMonthlyReport } from "@/lib/report";
@@ -79,7 +79,7 @@ export async function createCafe(_prev: Result | null, form: FormData): Promise<
           muted: mix(d.background, text, 0.6),
         },
       },
-      program: parseProgram({ ...sanaaCafe.program, levels: sanaaCafe.program.levels.map((l) => (l.key === "mokha" ? { ...l, key: "legend", name: "Legend" } : l)), leaderboardPrize: "A free drink every day for a week" }),
+      program: parseProgram(starterProgram),
       counterPinHash: hashSecret(d.counterPin),
       ownerPasswordHash: hashSecret(d.ownerPassword),
       ownerEmail: d.ownerEmail || null,

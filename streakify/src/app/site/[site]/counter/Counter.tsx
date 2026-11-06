@@ -1,23 +1,22 @@
 "use client";
 /**
- * The interactive counter screen. It moves between these steps:
+ * The interactive counter screen (tablet). Built to stay FAST: the customer
+ * types their number (or scans their Wallet pass), sees XP + rewards for a
+ * moment, and the line keeps moving. The big celebrations play on the
+ * customer's own phone, not here.
  *
- *   locked  -> staff enter the café PIN once
- *   phone   -> customer types their phone number
- *   signup  -> (new customers only) name, birthday, privacy, SMS opt-in
- *   result  -> streak, progress, rewards ready, savings messages
- *   notice  -> "already checked in" / errors
- *
- * After a result it automatically goes back to the phone screen so the next
- * customer can use it.
+ *   locked -> phone/scan -> (signup) -> result -> back to phone
  */
+import { Gift, QrCode, Smartphone, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { CafeLogo } from "@/components/CafeLogo";
+import { Flame } from "@/components/game/Flame";
 import { Keypad, formatTyped } from "@/components/Keypad";
 import { ProgressBar } from "@/components/ProgressBar";
 import type { CheckInResult, CheckInView } from "@/lib/checkin/service";
-import { lockCounter, resetDemo, submitPhone, submitRedeem, submitSignUp, unlockCounter } from "./actions";
+import { lockCounter, resetDemo, submitItems, submitPhone, submitRedeem, submitScan, submitSignUp, unlockCounter } from "./actions";
+import { Scanner } from "./Scanner";
 
 type CafeInfo = {
   name: string;
@@ -27,6 +26,7 @@ type CafeInfo = {
   privacyNotice: string;
   smsConsent: string;
   leaderboardPrize: string | null;
+  referralsOn: boolean;
 };
 
 type Step =
@@ -36,11 +36,12 @@ type Step =
   | { kind: "result"; view: CheckInView }
   | { kind: "notice"; message: string; tone: "info" | "error" };
 
-const RESULT_TIMEOUT_MS = 45_000;
+type Leader = { rank: number; firstName: string; visits: number };
+type ShowcaseEntry = { display: string; firstName: string; story: string; phoneUrl: string | null };
+
+const RESULT_TIMEOUT_MS = 30_000;
 const SIGNUP_TIMEOUT_MS = 120_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-type Leader = { rank: number; firstName: string; visits: number };
 
 export function Counter({
   siteKey,
@@ -52,19 +53,18 @@ export function Counter({
   siteKey: string;
   unlocked: boolean;
   cafe: CafeInfo;
-  showcase: { display: string; firstName: string; story: string }[];
+  showcase: ShowcaseEntry[];
   leaderboard: Leader[];
 }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>(unlocked ? { kind: "phone" } : { kind: "locked" });
   const [digits, setDigits] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [touch, setTouch] = useState(0); // bumps on any interaction to restart the idle timer
+  const [touch, setTouch] = useState(0);
 
-  // Idle reset: go back to the phone screen after a while.
   useEffect(() => {
-    const timeout =
-      step.kind === "result" || step.kind === "notice" ? RESULT_TIMEOUT_MS : step.kind === "signup" ? SIGNUP_TIMEOUT_MS : null;
+    const timeout = step.kind === "result" || step.kind === "notice" ? RESULT_TIMEOUT_MS : step.kind === "signup" ? SIGNUP_TIMEOUT_MS : null;
     if (!timeout) return;
     const t = setTimeout(() => {
       setDigits("");
@@ -76,6 +76,7 @@ export function Counter({
 
   function handleResult(r: CheckInResult) {
     setDigits("");
+    setScanning(false);
     if (r.status === "ok") setStep({ kind: "result", view: r.view });
     else if (r.status === "new") setStep({ kind: "signup", phone: r.phone });
     else if (r.status === "cooldown") setStep({ kind: "notice", message: r.message, tone: "info" });
@@ -87,21 +88,44 @@ export function Counter({
       try {
         then(await fn());
       } catch (e) {
-        const message = e instanceof Error ? e.message : "Something went wrong";
+        const message = e instanceof Error ? e.message : "";
         if (message.includes("locked")) setStep({ kind: "locked" });
         else setStep({ kind: "notice", message: "Something went wrong. Please try again.", tone: "error" });
       }
     });
   }
 
+  const scanRef = useRef<(code: string) => void>(() => {});
+  useEffect(() => {
+    scanRef.current = (code: string) => run(() => submitScan(siteKey, code), handleResult);
+  });
+
+  // USB/Bluetooth barcode scanners type the code + Enter like a keyboard.
+  useEffect(() => {
+    if (step.kind !== "phone") return;
+    let buf = "";
+    let last = 0;
+    const onKey = (e: KeyboardEvent) => {
+      const now = Date.now();
+      if (now - last > 80) buf = "";
+      last = now;
+      if (e.key === "Enter") {
+        if (buf.toUpperCase().startsWith("STRK:")) scanRef.current(buf);
+        buf = "";
+      } else if (e.key.length === 1) buf += e.key;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [step.kind]);
+
   const home = () => {
     setDigits("");
     setStep({ kind: "phone" });
-    router.refresh(); // pick up the latest leaderboard
+    router.refresh();
   };
 
   return (
-    <main className="flex flex-1 flex-col px-4 py-6 sm:px-8" onPointerDown={() => setTouch((n) => n + 1)}>
+    <main className="flex flex-1 flex-col px-4 py-5 sm:px-8" onPointerDown={() => setTouch((n) => n + 1)}>
       <header className="flex items-center justify-between gap-4">
         <button type="button" onClick={home} aria-label="Start over">
           <CafeLogo name={cafe.name} logoUrl={cafe.logoUrl} size="md" />
@@ -109,18 +133,14 @@ export function Counter({
         <div className="flex items-center gap-3 text-sm text-brand-muted">
           {cafe.isDemo && <span className="rounded-full bg-brand-primary/20 px-3 py-1 text-brand-primary">Demo mode</span>}
           {step.kind !== "locked" && !cafe.isDemo && (
-            <button
-              type="button"
-              className="opacity-40 hover:opacity-100"
-              onClick={() => run(() => lockCounter(siteKey), () => setStep({ kind: "locked" }))}
-            >
+            <button type="button" className="opacity-40 hover:opacity-100" onClick={() => run(() => lockCounter(siteKey), () => setStep({ kind: "locked" }))}>
               Lock
             </button>
           )}
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-5">
         {step.kind === "locked" && <Unlock siteKey={siteKey} onUnlocked={home} />}
 
         {step.kind === "phone" && (
@@ -131,6 +151,7 @@ export function Counter({
             tagline={cafe.tagline}
             leaderboard={leaderboard}
             prize={cafe.leaderboardPrize}
+            onScan={() => setScanning(true)}
             onSubmit={() => run(() => submitPhone(siteKey, digits), handleResult)}
           />
         )}
@@ -149,13 +170,15 @@ export function Counter({
 
         {step.kind === "notice" && (
           <div className="mx-auto max-w-xl text-center">
-            <p className={`text-2xl ${step.tone === "error" ? "text-red-300" : "text-brand-text"}`}>{step.message}</p>
-            <button type="button" onClick={home} className="mt-8 rounded-2xl bg-brand-primary px-8 py-4 text-xl font-semibold text-brand-on-primary">
+            <p className={`text-2xl ${step.tone === "error" ? "text-red-400" : "text-brand-text"}`}>{step.message}</p>
+            <button type="button" onClick={home} className="pressable mt-8 rounded-2xl bg-brand-primary px-8 py-4 text-xl font-semibold text-brand-on-primary">
               OK
             </button>
           </div>
         )}
       </div>
+
+      {scanning && <Scanner onCode={(c) => scanRef.current(c)} onClose={() => setScanning(false)} />}
 
       {cafe.isDemo && step.kind === "phone" && (
         <DemoPanel
@@ -189,11 +212,10 @@ function Unlock({ siteKey, onUnlocked }: { siteKey: string; onUnlocked: () => vo
       <h1 className="text-2xl font-semibold">Staff: unlock this tablet</h1>
       <p className="mt-1 text-brand-muted">Enter the counter PIN. You only do this once per tablet.</p>
       <p className="my-6 font-mono text-4xl tracking-[0.5em]">{"•".repeat(pin.length) || " "}</p>
-      {error && <p className="mb-4 text-red-300">{error}</p>}
+      {error && <p className="mb-4 text-red-400">{error}</p>}
       <Keypad
         onDigit={(d) => {
-          const next = (pin + d).slice(0, 8);
-          setPin(next);
+          setPin((pin + d).slice(0, 8));
           setError(null);
         }}
         onBackspace={() => setPin(pin.slice(0, -1))}
@@ -203,7 +225,7 @@ function Unlock({ siteKey, onUnlocked }: { siteKey: string; onUnlocked: () => vo
         type="button"
         disabled={pin.length < 4 || pending}
         onClick={() => submit(pin)}
-        className="mt-4 w-full rounded-2xl bg-brand-primary py-4 text-xl font-semibold text-brand-on-primary disabled:opacity-40"
+        className="pressable mt-4 w-full rounded-2xl bg-brand-primary py-4 text-xl font-semibold text-brand-on-primary disabled:opacity-40"
       >
         {pending ? "Checking…" : "Unlock"}
       </button>
@@ -219,6 +241,7 @@ function PhoneStep({
   leaderboard,
   prize,
   onSubmit,
+  onScan,
 }: {
   digits: string;
   setDigits: (d: string) => void;
@@ -227,48 +250,35 @@ function PhoneStep({
   leaderboard: Leader[];
   prize: string | null;
   onSubmit: () => void;
+  onScan: () => void;
 }) {
-  const ready = digits.length === 10;
   return (
     <div className="grid items-center gap-8 md:grid-cols-2">
       <div className="text-center md:text-left">
-        <h1 className="text-4xl font-bold leading-tight sm:text-5xl">Keep your streak going</h1>
+        <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl">Keep your streak going</h1>
         <p className="mt-3 text-xl text-brand-muted">{tagline ?? "Enter your phone number to check in."}</p>
-        <p
-          className="mt-8 min-h-[3.5rem] rounded-2xl bg-brand-surface px-6 py-3 text-center font-mono text-3xl tracking-wide sm:text-4xl"
-          aria-live="polite"
-        >
+        <p className="mt-8 min-h-[3.5rem] rounded-2xl bg-brand-surface px-6 py-3 text-center font-mono text-3xl tracking-wide sm:text-4xl" aria-live="polite">
           {digits ? formatTyped(digits) : <span className="text-brand-muted/50">(___) ___-____</span>}
         </p>
         <MiniLeaderboard entries={leaderboard.slice(0, 5)} prize={prize} />
       </div>
       <div className="mx-auto w-full max-w-sm">
-        <Keypad
-          onDigit={(d) => setDigits((digits + d).slice(0, 10))}
-          onBackspace={() => setDigits(digits.slice(0, -1))}
-          onClear={() => setDigits("")}
-        />
+        <Keypad onDigit={(d) => setDigits((digits + d).slice(0, 10))} onBackspace={() => setDigits(digits.slice(0, -1))} onClear={() => setDigits("")} />
         <button
           type="button"
-          disabled={!ready || pending}
+          disabled={digits.length !== 10 || pending}
           onClick={onSubmit}
-          className="mt-4 w-full rounded-2xl bg-brand-primary py-5 text-2xl font-bold text-brand-on-primary shadow-lg disabled:opacity-40"
+          className="pressable mt-4 w-full rounded-2xl bg-brand-primary py-5 text-2xl font-bold text-brand-on-primary shadow-lg disabled:opacity-40"
         >
           {pending ? "Checking in…" : "Check in"}
+        </button>
+        <button type="button" onClick={onScan} className="pressable mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-surface py-3 text-lg">
+          <QrCode className="h-5 w-5" aria-hidden /> Scan Wallet pass
         </button>
       </div>
     </div>
   );
 }
-
-type SignUpForm = {
-  firstName: string;
-  birthdayMonth: number | null;
-  birthdayDay: number | null;
-  privacyAccepted: boolean;
-  smsOptIn: boolean;
-  leaderboardOptIn: boolean;
-};
 
 function MiniLeaderboard({ entries, prize }: { entries: Leader[]; prize: string | null }) {
   if (!entries.length) return null;
@@ -283,13 +293,25 @@ function MiniLeaderboard({ entries, prize }: { entries: Leader[]; prize: string 
               <span className="inline-block w-6 text-brand-primary">{e.rank}.</span>
               {e.firstName}
             </span>
-            <span className="text-brand-muted">{e.visits} {e.visits === 1 ? "visit" : "visits"}</span>
+            <span className="text-brand-muted">
+              {e.visits} {e.visits === 1 ? "visit" : "visits"}
+            </span>
           </li>
         ))}
       </ol>
     </div>
   );
 }
+
+type SignUpForm = {
+  firstName: string;
+  birthdayMonth: number | null;
+  birthdayDay: number | null;
+  privacyAccepted: boolean;
+  smsOptIn: boolean;
+  leaderboardOptIn: boolean;
+  friendCode: string;
+};
 
 function SignUpStep({
   cafe,
@@ -311,11 +333,13 @@ function SignUpStep({
     privacyAccepted: false,
     smsOptIn: false, // never pre-checked: consent must be an active choice
     leaderboardOptIn: false,
+    friendCode: "",
   });
   const nameRef = useRef<HTMLInputElement>(null);
   useEffect(() => nameRef.current?.focus(), []);
   const canSubmit = f.firstName.trim().length > 0 && f.privacyAccepted && !pending;
   const set = <K extends keyof SignUpForm>(k: K, v: SignUpForm[K]) => setF((x) => ({ ...x, [k]: v }));
+  const field = "mt-1 w-full rounded-xl bg-brand-surface px-4 py-4 text-2xl outline-none ring-brand-primary focus:ring-2";
 
   return (
     <form
@@ -329,31 +353,34 @@ function SignUpStep({
         <h1 className="text-3xl font-bold">Welcome to {cafe.name} Rewards!</h1>
         <p className="text-brand-muted">Joining with {phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}. Takes 20 seconds.</p>
       </div>
-
-      <label className="block">
-        <span className="text-lg">First name or nickname</span>
-        <input
-          ref={nameRef}
-          value={f.firstName}
-          onChange={(e) => set("firstName", e.target.value)}
-          maxLength={24}
-          autoComplete="off"
-          className="mt-1 w-full rounded-xl bg-brand-surface px-4 py-4 text-2xl outline-none ring-brand-primary focus:ring-2"
-          placeholder="e.g. Sara"
-        />
-      </label>
-
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-lg">First name or nickname</span>
+          <input ref={nameRef} value={f.firstName} onChange={(e) => set("firstName", e.target.value)} maxLength={24} autoComplete="off" className={field} placeholder="e.g. Sara" />
+        </label>
+        {cafe.referralsOn && (
+          <label className="block">
+            <span className="text-lg">
+              Friend&apos;s code <span className="text-brand-muted">(optional)</span>
+            </span>
+            <input
+              value={f.friendCode}
+              onChange={(e) => set("friendCode", e.target.value.toUpperCase())}
+              maxLength={8}
+              autoComplete="off"
+              autoCapitalize="characters"
+              className={`${field} font-mono uppercase`}
+              placeholder="ABC123"
+            />
+          </label>
+        )}
+      </div>
       <fieldset>
         <legend className="text-lg">
           Birthday <span className="text-brand-muted">(optional, for a free birthday drink)</span>
         </legend>
         <div className="mt-1 flex gap-3">
-          <select
-            value={f.birthdayMonth ?? ""}
-            onChange={(e) => set("birthdayMonth", e.target.value ? Number(e.target.value) : null)}
-            className="flex-1 rounded-xl bg-brand-surface px-4 py-4 text-xl"
-            aria-label="Birthday month"
-          >
+          <select value={f.birthdayMonth ?? ""} onChange={(e) => set("birthdayMonth", e.target.value ? Number(e.target.value) : null)} className="flex-1 rounded-xl bg-brand-surface px-4 py-4 text-xl" aria-label="Birthday month">
             <option value="">Month</option>
             {MONTHS.map((m, i) => (
               <option key={m} value={i + 1}>
@@ -361,12 +388,7 @@ function SignUpStep({
               </option>
             ))}
           </select>
-          <select
-            value={f.birthdayDay ?? ""}
-            onChange={(e) => set("birthdayDay", e.target.value ? Number(e.target.value) : null)}
-            className="w-32 rounded-xl bg-brand-surface px-4 py-4 text-xl"
-            aria-label="Birthday day"
-          >
+          <select value={f.birthdayDay ?? ""} onChange={(e) => set("birthdayDay", e.target.value ? Number(e.target.value) : null)} className="w-32 rounded-xl bg-brand-surface px-4 py-4 text-xl" aria-label="Birthday day">
             <option value="">Day</option>
             {Array.from({ length: 31 }, (_, i) => (
               <option key={i} value={i + 1}>
@@ -376,7 +398,6 @@ function SignUpStep({
           </select>
         </div>
       </fieldset>
-
       <div className="space-y-3 rounded-2xl bg-brand-surface p-4">
         <p className="text-sm text-brand-muted">{cafe.privacyNotice}</p>
         <Check checked={f.privacyAccepted} onChange={(v) => set("privacyAccepted", v)}>
@@ -391,16 +412,11 @@ function SignUpStep({
           <span className="text-brand-muted"> Never your phone number.</span>
         </Check>
       </div>
-
       <div className="flex gap-3">
-        <button type="button" onClick={onCancel} className="rounded-2xl bg-brand-surface px-6 py-4 text-xl">
+        <button type="button" onClick={onCancel} className="pressable rounded-2xl bg-brand-surface px-6 py-4 text-xl">
           Cancel
         </button>
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="flex-1 rounded-2xl bg-brand-primary py-4 text-2xl font-bold text-brand-on-primary disabled:opacity-40"
-        >
+        <button type="submit" disabled={!canSubmit} className="pressable flex-1 rounded-2xl bg-brand-primary py-4 text-2xl font-bold text-brand-on-primary disabled:opacity-40">
           {pending ? "Joining…" : "Join & check in"}
         </button>
       </div>
@@ -420,6 +436,8 @@ function Check({ checked, onChange, children }: { checked: boolean; onChange: (v
 function ResultStep({ siteKey, view: initial, onDone }: { siteKey: string; view: CheckInView; onDone: () => void }) {
   const [view, setView] = useState(initial);
   const [confirming, setConfirming] = useState<CheckInView["rewards"][number] | null>(null);
+  const [stamped, setStamped] = useState<string[]>([]);
+  const [stampMsg, setStampMsg] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -440,102 +458,150 @@ function ResultStep({ siteKey, view: initial, onDone }: { siteKey: string; view:
       }));
     });
 
-  const headline = view.isNewMember
-    ? `Welcome, ${view.firstName}! You're in.`
-    : view.leveledUpTo
-      ? `${view.firstName}, you reached ${view.leveledUpTo}!`
-      : `Thanks, ${view.firstName}!`;
+  const stamp = (id: string) =>
+    startTransition(async () => {
+      setStamped((s) => [...s, id]);
+      const r = await submitItems(siteKey, view.customerId, [id]);
+      if (!r.ok) {
+        setStampMsg(r.message);
+        return;
+      }
+      setStampMsg(r.newStamps ? `New passport stamp! +${r.xp} XP${r.rewards.length ? ` · ${r.rewards.join(", ")} unlocked` : ""}` : "Logged for this week's challenges.");
+    });
+
+  const headline = view.isNewMember ? `Welcome, ${view.firstName}!` : view.leveledUpTo ? `${view.firstName}, you're now ${view.leveledUpTo}!` : `Thanks, ${view.firstName}!`;
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <section className="space-y-5">
-        <h1 className="text-4xl font-bold leading-tight">{headline}</h1>
-        <div className="flex flex-wrap gap-3 text-lg">
-          <span className="rounded-full bg-brand-primary px-4 py-1 font-semibold text-brand-on-primary">{view.levelName}</span>
-          <span className="rounded-full bg-brand-surface px-4 py-1">
-            🔥 {view.streakWeeks}-week streak
-          </span>
-          <span className="rounded-full bg-brand-surface px-4 py-1">{view.streakVisits} streak visits</span>
+      <section className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Flame weeks={view.streakWeeks} size={84} />
+          <div>
+            <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{headline}</h1>
+            <p className="text-brand-muted">
+              {view.streakWeeks}-week streak · {view.levelIcon} {view.levelName}
+            </p>
+          </div>
         </div>
-        {view.levelPerk && <p className="text-xl text-brand-primary">✨ {view.levelPerk[0].toUpperCase() + view.levelPerk.slice(1)}. Ask the cashier!</p>}
-        <ProgressBar fraction={view.progress.fraction} label={view.progress.line} />
+        <div className="rounded-2xl bg-brand-surface p-4">
+          <p className="text-4xl font-bold text-brand-primary">+{view.xpGained} XP</p>
+          <ul className="mt-1 text-sm text-brand-muted">
+            {view.xpLines.map((l, i) => (
+              <li key={i}>
+                +{l.xp} {l.label}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3">
+            <ProgressBar fraction={view.progress.fraction} label={view.progress.line} />
+          </div>
+        </div>
+        {(view.badgesEarned.length > 0 || view.mysteryEarned) && (
+          <div className="flex flex-wrap gap-2">
+            {view.badgesEarned.map((b) => (
+              <span key={b.name} className="animate-pop rounded-full bg-brand-primary/15 px-3 py-1.5 font-semibold text-brand-primary">
+                {b.icon} {b.name}
+              </span>
+            ))}
+            {view.mysteryEarned && (
+              <span className="animate-pop flex items-center gap-1.5 rounded-full bg-brand-primary px-3 py-1.5 font-semibold text-brand-on-primary">
+                <Gift className="h-4 w-4" aria-hidden /> Mystery dallah! Open it on your phone
+              </span>
+            )}
+          </div>
+        )}
+        {view.levelPerk && <p className="text-lg text-brand-primary">✨ {view.levelPerk[0].toUpperCase() + view.levelPerk.slice(1)}. Ask the cashier!</p>}
         {view.lines.events.map((l) => (
           <p key={l} className="rounded-xl bg-brand-surface p-3 text-brand-muted">
             {l}
           </p>
         ))}
-        {view.lines.risk && <p className="rounded-xl border border-brand-primary/50 p-3">{view.lines.risk}</p>}
       </section>
 
       <section className="space-y-4">
         <div className="rounded-2xl bg-brand-surface p-5">
           {view.lines.savedToday && <p className="text-3xl font-bold text-brand-primary">{view.lines.savedToday}</p>}
           <p className="mt-1 text-xl">{view.lines.nextTime}</p>
-          <p className="mt-3 text-brand-muted">{view.lines.totalSaved}</p>
+          <p className="mt-2 text-brand-muted">{view.lines.totalSaved}</p>
         </div>
 
         {view.rewards.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Rewards ready</h2>
+          <div className="space-y-2">
+            <h2 className="font-semibold">Rewards ready</h2>
             {view.rewards.map((r) => (
-              <div key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-brand-primary/40 p-4">
+              <div key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-brand-primary/40 p-3">
                 <div>
-                  <p className="text-xl font-semibold">
+                  <p className="text-lg font-semibold">
                     {r.isNew && <span className="mr-2 text-brand-primary">NEW</span>}
                     {r.name}
                   </p>
-                  <p className="text-brand-muted">{r.valueLabel} value</p>
+                  <p className="text-sm text-brand-muted">{r.valueLabel} value</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(r)}
-                  className="rounded-xl bg-brand-primary px-5 py-3 text-lg font-semibold text-brand-on-primary"
-                >
+                <button type="button" onClick={() => setConfirming(r)} className="pressable rounded-xl bg-brand-primary px-5 py-3 font-semibold text-brand-on-primary">
                   Use now
                 </button>
               </div>
             ))}
-            <p className="text-sm text-brand-muted">Not using it today? It stays saved for your next visit.</p>
           </div>
         )}
-        {error && <p className="text-red-300">{error}</p>}
+        {error && <p className="text-red-400">{error}</p>}
+
+        {view.menu.length > 0 && (
+          <div className="rounded-2xl bg-brand-surface p-4">
+            <p className="flex flex-wrap items-center gap-2 font-semibold">
+              <Sparkles className="h-4 w-4 text-brand-primary" aria-hidden /> What did you have?
+              <span className="font-normal text-brand-muted">Tap for a passport stamp</span>
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {view.menu.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  disabled={stamped.includes(m.id) || pending}
+                  onClick={() => stamp(m.id)}
+                  className={`pressable rounded-full px-3 py-1.5 text-sm ${stamped.includes(m.id) ? "bg-brand-primary text-brand-on-primary" : "bg-brand-bg"}`}
+                >
+                  {m.icon} {m.name}
+                  {!m.stamped && !stamped.includes(m.id) && <span className="ml-1 text-[10px] font-bold text-brand-primary">NEW</span>}
+                </button>
+              ))}
+            </div>
+            {stampMsg && <p className="mt-2 text-sm text-brand-primary">{stampMsg}</p>}
+          </div>
+        )}
 
         {view.qrSvg && (
           <div className="flex items-center gap-4 rounded-2xl bg-brand-surface p-4">
-            <div data-url={view.personalUrl} className="h-28 w-28 shrink-0 overflow-hidden rounded-lg bg-white p-1" dangerouslySetInnerHTML={{ __html: view.qrSvg }} />
-            <p className="text-brand-muted">
-              <span className="block text-lg font-semibold text-brand-text">Your rewards page</span>
-              Scan with your phone camera to see your streak, savings and the leaderboard anytime.
+            <div data-url={view.personalUrl} className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-white p-1" dangerouslySetInnerHTML={{ __html: view.qrSvg }} />
+            <p className="text-sm text-brand-muted">
+              <span className="flex items-center gap-1.5 text-base font-semibold text-brand-text">
+                <Smartphone className="h-4 w-4" aria-hidden /> Your rewards app
+              </span>
+              Scan to open your badges, passport, challenges and mystery dallahs. Add it to your Home Screen or Wallet.
             </p>
           </div>
         )}
 
-        <button type="button" onClick={onDone} className="w-full rounded-2xl bg-brand-text/10 py-4 text-xl">
+        <button type="button" onClick={onDone} className="pressable w-full rounded-2xl bg-brand-text/10 py-4 text-xl">
           Done
         </button>
       </section>
 
       {confirming && (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-3xl bg-brand-surface p-6 text-center">
+          <div className="animate-pop w-full max-w-md rounded-3xl bg-brand-surface p-6 text-center">
             <p className="text-sm uppercase tracking-widest text-brand-muted">For the cashier</p>
             <p className="mt-3 text-2xl font-bold">
               {confirming.name} ({confirming.valueLabel})
             </p>
             <p className="mt-3 text-lg">
-              In Toast, apply the <strong className="text-brand-primary">“Streak Reward”</strong> discount for{" "}
-              <strong>{confirming.valueLabel}</strong>, then tap Applied.
+              In Toast, apply the <strong className="text-brand-primary">“Streak Reward”</strong> discount for <strong>{confirming.valueLabel}</strong>, then tap Applied.
             </p>
             <div className="mt-6 flex gap-3">
-              <button type="button" onClick={() => setConfirming(null)} className="flex-1 rounded-2xl bg-brand-text/10 py-4 text-lg">
+              <button type="button" onClick={() => setConfirming(null)} className="pressable flex-1 rounded-2xl bg-brand-text/10 py-4 text-lg">
                 Cancel
               </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => redeem(confirming.id)}
-                className="flex-1 rounded-2xl bg-brand-primary py-4 text-lg font-bold text-brand-on-primary disabled:opacity-50"
-              >
+              <button type="button" disabled={pending} onClick={() => redeem(confirming.id)} className="pressable flex-1 rounded-2xl bg-brand-primary py-4 text-lg font-bold text-brand-on-primary disabled:opacity-50">
                 {pending ? "Saving…" : "Applied"}
               </button>
             </div>
@@ -546,17 +612,7 @@ function ResultStep({ siteKey, view: initial, onDone }: { siteKey: string; view:
   );
 }
 
-function DemoPanel({
-  showcase,
-  onPick,
-  onReset,
-  pending,
-}: {
-  showcase: { display: string; firstName: string; story: string }[];
-  onPick: (display: string) => void;
-  onReset: () => void;
-  pending: boolean;
-}) {
+function DemoPanel({ showcase, onPick, onReset, pending }: { showcase: ShowcaseEntry[]; onPick: (display: string) => void; onReset: () => void; pending: boolean }) {
   return (
     <aside className="mx-auto mt-4 w-full max-w-5xl rounded-2xl border border-dashed border-brand-muted/40 p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -565,12 +621,19 @@ function DemoPanel({
           Reset demo data
         </button>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {showcase.map((c) => (
-          <button key={c.display} type="button" onClick={() => onPick(c.display)} className="rounded-xl bg-brand-surface p-3 text-left">
-            <span className="font-semibold">{c.firstName}</span> <span className="font-mono text-sm text-brand-muted">{c.display}</span>
-            <span className="block text-sm text-brand-muted">{c.story}</span>
-          </button>
+          <div key={c.display} className="rounded-xl bg-brand-surface p-3 text-left">
+            <button type="button" onClick={() => onPick(c.display)} className="w-full text-left">
+              <span className="font-semibold">{c.firstName}</span> <span className="font-mono text-xs text-brand-muted">{c.display}</span>
+              <span className="block text-sm text-brand-muted">{c.story}</span>
+            </button>
+            {c.phoneUrl && (
+              <a href={c.phoneUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-brand-primary">
+                <Smartphone className="h-3 w-3" aria-hidden /> Open their phone app
+              </a>
+            )}
+          </div>
         ))}
         <div className="rounded-xl bg-brand-surface p-3 text-sm text-brand-muted">
           <span className="font-semibold text-brand-text">New customer:</span> type any other number, e.g. (313) 555-0199, to see sign-up.

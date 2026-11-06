@@ -8,7 +8,7 @@
 import QRCode from "qrcode";
 import { z } from "zod";
 import { throttle, verifySecret } from "@/lib/auth";
-import { checkInByPhone, redeemReward, signUpAndCheckIn, type CheckInResult, type RedeemResult } from "@/lib/checkin/service";
+import { checkInByPhone, checkInByToken, recordItems, redeemReward, signUpAndCheckIn, type CheckInResult, type RedeemResult } from "@/lib/checkin/service";
 import { getRepo, type Cafe } from "@/lib/data";
 import { generateDemoData } from "@/lib/demo/generate";
 import { demoCafe } from "@/lib/demo/cafes";
@@ -76,6 +76,7 @@ const signUpSchema = z.object({
   privacyAccepted: z.literal(true, { error: "Please accept the privacy notice to join" }),
   smsOptIn: z.boolean(),
   leaderboardOptIn: z.boolean(),
+  friendCode: z.string().trim().max(12).optional(),
 });
 
 export async function submitSignUp(siteKey: string, input: z.input<typeof signUpSchema>): Promise<CheckInResult> {
@@ -93,7 +94,22 @@ export async function submitSignUp(siteKey: string, input: z.input<typeof signUp
     birthdayDay: hasBirthday ? birthdayDay : null,
     smsOptIn: parsed.data.smsOptIn,
     leaderboardOptIn: parsed.data.leaderboardOptIn,
+    friendCode: parsed.data.friendCode || null,
   }));
+}
+
+/** Wallet pass / QR code scanned at the counter ("STRK:<token>"). */
+export async function submitScan(siteKey: string, code: string): Promise<CheckInResult> {
+  const cafe = await authorizedCafe(siteKey);
+  const m = code.trim().match(/^STRK:([a-f0-9]{32})$/i);
+  if (!m) return { status: "error", message: "That code isn't a rewards pass." };
+  return withLink(await checkInByToken(cafe, m[1].toLowerCase()));
+}
+
+/** "What did you have?" taps after a check-in -> drink passport stamps. */
+export async function submitItems(siteKey: string, customerId: string, itemIds: string[]) {
+  const cafe = await authorizedCafe(siteKey);
+  return recordItems(cafe, customerId, itemIds.slice(0, 5));
 }
 
 export async function submitRedeem(siteKey: string, customerId: string, rewardId: string): Promise<RedeemResult> {

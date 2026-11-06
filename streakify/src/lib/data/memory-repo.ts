@@ -13,7 +13,9 @@ import { hashSecret } from "../auth";
 import {
   type Cafe,
   type CafePatch,
-  type CheckInWrite,
+  type CustomerWrite,
+  type PushSubscriptionRow,
+  type Squad,
   ConflictError,
   type Customer,
   type DemoDataset,
@@ -32,6 +34,9 @@ type StoredVisit = VisitRow & { cafeId: string; posOrderId: string | null };
 type StoredSms = SmsLogEntry & { id: string };
 
 type Db = {
+  squads: Squad[];
+  push: (PushSubscriptionRow & { cafeId: string; customerId: string })[];
+  wallet: { deviceLibraryId: string; passTypeId: string; serial: string; pushToken: string }[];
   cafes: Cafe[];
   customers: Customer[];
   rewards: StoredReward[];
@@ -43,7 +48,7 @@ type Db = {
 const g = globalThis as unknown as { __streakifyMemoryDb?: Db };
 
 function seedDb(): Db {
-  const db: Db = { cafes: [], customers: [], rewards: [], visits: [], sms: [], jobs: new Set() };
+  const db: Db = { cafes: [], customers: [], rewards: [], visits: [], sms: [], jobs: new Set(), squads: [], push: [], wallet: [] };
   g.__streakifyMemoryDb = db;
   for (const seed of seedCafes) {
     const cafe: Cafe = {
@@ -71,6 +76,8 @@ function seedDb(): Db {
 function loadDemo(db: Db, cafeId: string, data: DemoDataset) {
   const ids = new Set(db.customers.filter((c) => c.cafeId === cafeId).map((c) => c.id));
   db.customers = db.customers.filter((c) => c.cafeId !== cafeId);
+  db.squads = db.squads.filter((q) => q.cafeId !== cafeId);
+  db.push = db.push.filter((x) => x.cafeId !== cafeId);
   db.rewards = db.rewards.filter((r) => !ids.has(r.customerId));
   db.visits = db.visits.filter((v) => v.cafeId !== cafeId);
   const newIds = data.customers.map((c) => {
@@ -85,10 +92,21 @@ function loadDemo(db: Db, cafeId: string, data: DemoDataset) {
       leaderboardOptIn: c.leaderboardOptIn,
       smsOptIn: c.smsOptIn,
       createdAt: c.createdAt,
+      updatedAt: c.createdAt,
       version: 0,
+      referralCode: referralCode(),
+      squadId: null,
     });
     return id;
   });
+  for (const q of data.squads ?? []) {
+    const squad: Squad = { id: randomUUID(), cafeId, name: q.name, code: q.code, streakWeeks: q.streakWeeks, lastCompleteWeek: q.lastCompleteWeek };
+    db.squads.push(squad);
+    for (const i of q.members) {
+      const c = db.customers.find((x) => x.id === newIds[i]);
+      if (c) c.squadId = squad.id;
+    }
+  }
   for (const v of data.visits) {
     db.visits.push({
       id: randomUUID(),
@@ -116,6 +134,13 @@ function loadDemo(db: Db, cafeId: string, data: DemoDataset) {
       redeemedLocalDate: r.redeemedLocalDate,
     });
   }
+}
+
+/** 6-character code like "K7Q2XD" (no look-alike letters). */
+export function referralCode(): string {
+  const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(6);
+  return Array.from(bytes, (b) => abc[b % abc.length]).join("");
 }
 
 const copy = <T,>(x: T | undefined): T | null => (x ? structuredClone(x) : null);
@@ -168,8 +193,12 @@ export class MemoryRepo implements Repo {
       throw new DuplicatePhoneError();
     }
     const birthday = input.birthdayMonth && input.birthdayDay ? { month: input.birthdayMonth, day: input.birthdayDay } : null;
+    const state = newStreakState(birthday);
+    state.game.referredBy = input.referredBy ?? null;
+    let code = referralCode();
+    while (this.db.customers.some((c) => c.cafeId === input.cafeId && c.referralCode === code)) code = referralCode();
     const customer: Customer = {
-      ...newStreakState(birthday),
+      ...state,
       id: randomUUID(),
       cafeId: input.cafeId,
       phone: input.phone,
@@ -178,7 +207,10 @@ export class MemoryRepo implements Repo {
       leaderboardOptIn: input.leaderboardOptIn,
       smsOptIn: input.smsOptIn,
       createdAt: input.now.toISOString(),
+      updatedAt: input.now.toISOString(),
       version: 0,
+      referralCode: code,
+      squadId: null,
     };
     this.db.customers.push(customer);
     return structuredClone(customer);
@@ -191,20 +223,23 @@ export class MemoryRepo implements Repo {
     if (prefs.smsOptIn !== undefined) c.smsOptIn = prefs.smsOptIn;
   }
 
-  async applyCheckIn(w: CheckInWrite) {
+  async applyUpdate(w: CustomerWrite) {
     const c = this.db.customers.find((x) => x.cafeId === w.cafeId && x.id === w.customerId);
     if (!c || c.version !== w.expectedVersion) throw new ConflictError();
-    Object.assign(c, w.state, { version: c.version + 1 });
-    const visitId = randomUUID();
-    this.db.visits.push({
-      id: visitId,
-      cafeId: w.cafeId,
-      customerId: w.customerId,
-      createdAt: w.visit.createdAt,
-      localDate: w.visit.localDate,
-      verified: false,
-      posOrderId: null,
-    });
+    Object.assign(c, structuredClone(w.state), { version: c.version + 1, updatedAt: new Date().toISOString() });
+    let visitId: string | null = null;
+    if (w.visit) {
+      visitId = randomUUID();
+      this.db.visits.push({
+        id: visitId,
+        cafeId: w.cafeId,
+        customerId: w.customerId,
+        createdAt: w.visit.createdAt,
+        localDate: w.visit.localDate,
+        verified: false,
+        posOrderId: null,
+      });
+    }
     for (const r of w.rewards) {
       this.db.rewards.push({
         id: randomUUID(),
@@ -215,13 +250,82 @@ export class MemoryRepo implements Repo {
         valueCents: r.valueCents,
         costCents: r.costCents,
         status: "available",
-        earnedAt: w.visit.createdAt,
-        earnedLocalDate: w.visit.localDate,
+        earnedAt: w.meta.createdAt,
+        earnedLocalDate: w.meta.localDate,
         redeemedAt: null,
         redeemedLocalDate: null,
       });
     }
     return { visitId };
+  }
+
+  async findCustomerByReferralCode(cafeId: string, code: string) {
+    return copy(this.db.customers.find((x) => x.cafeId === cafeId && x.referralCode === code.toUpperCase()));
+  }
+  async getCustomerById(customerId: string) {
+    return copy(this.db.customers.find((x) => x.id === customerId));
+  }
+  async getCafeById(cafeId: string) {
+    return copy(this.db.cafes.find((x) => x.id === cafeId));
+  }
+
+  async createSquad(cafeId: string, name: string, code: string) {
+    if (this.db.squads.some((q) => q.cafeId === cafeId && q.code === code)) throw new Error("Code taken");
+    const q: Squad = { id: randomUUID(), cafeId, name, code, streakWeeks: 0, lastCompleteWeek: null };
+    this.db.squads.push(q);
+    return structuredClone(q);
+  }
+  async getSquad(cafeId: string, squadId: string) {
+    return copy(this.db.squads.find((q) => q.cafeId === cafeId && q.id === squadId));
+  }
+  async getSquadByCode(cafeId: string, code: string) {
+    return copy(this.db.squads.find((q) => q.cafeId === cafeId && q.code === code.toUpperCase()));
+  }
+  async listSquadMembers(cafeId: string, squadId: string) {
+    return structuredClone(this.db.customers.filter((c) => c.cafeId === cafeId && c.squadId === squadId));
+  }
+  async setCustomerSquad(cafeId: string, customerId: string, squadId: string | null) {
+    const c = this.db.customers.find((x) => x.cafeId === cafeId && x.id === customerId);
+    if (c) c.squadId = squadId;
+  }
+  async completeSquadWeek(squadId: string, week: string) {
+    const q = this.db.squads.find((x) => x.id === squadId);
+    if (!q || (q.lastCompleteWeek && q.lastCompleteWeek >= week)) return null;
+    const prev = new Date(`${week}T00:00:00Z`);
+    prev.setUTCDate(prev.getUTCDate() - 7);
+    q.streakWeeks = q.lastCompleteWeek === prev.toISOString().slice(0, 10) ? q.streakWeeks + 1 : 1;
+    q.lastCompleteWeek = week;
+    return q.streakWeeks;
+  }
+
+  async savePushSubscription(cafeId: string, customerId: string, sub: PushSubscriptionRow) {
+    this.db.push = this.db.push.filter((p) => p.endpoint !== sub.endpoint);
+    this.db.push.push({ ...sub, cafeId, customerId });
+  }
+  async listPushSubscriptions(cafeId: string, customerId: string) {
+    return this.db.push.filter((p) => p.cafeId === cafeId && p.customerId === customerId).map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
+  }
+  async deletePushSubscription(endpoint: string) {
+    this.db.push = this.db.push.filter((p) => p.endpoint !== endpoint);
+  }
+
+  async registerWalletDevice(deviceLibraryId: string, passTypeId: string, serial: string, pushToken: string) {
+    const existing = this.db.wallet.find((w) => w.deviceLibraryId === deviceLibraryId && w.passTypeId === passTypeId && w.serial === serial);
+    if (existing) {
+      existing.pushToken = pushToken;
+      return false;
+    }
+    this.db.wallet.push({ deviceLibraryId, passTypeId, serial, pushToken });
+    return true;
+  }
+  async unregisterWalletDevice(deviceLibraryId: string, passTypeId: string, serial: string) {
+    this.db.wallet = this.db.wallet.filter((w) => !(w.deviceLibraryId === deviceLibraryId && w.passTypeId === passTypeId && w.serial === serial));
+  }
+  async listWalletSerials(deviceLibraryId: string, passTypeId: string) {
+    return this.db.wallet.filter((w) => w.deviceLibraryId === deviceLibraryId && w.passTypeId === passTypeId).map((w) => w.serial);
+  }
+  async listWalletPushTokens(serial: string) {
+    return this.db.wallet.filter((w) => w.serial === serial).map(({ pushToken, passTypeId }) => ({ pushToken, passTypeId }));
   }
 
   async listAvailableRewards(cafeId: string, customerId: string) {

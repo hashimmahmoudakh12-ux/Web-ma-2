@@ -122,3 +122,9 @@ export function formatMonth(month: string): string {
 export function formatShortDay(date: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 }
+
+/** Hour of the day (0-23) on the café's clock. */
+export function localHour(instant: Date, timeZone: string): number {
+  const h = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(instant);
+  return Number(h) % 24;
+}

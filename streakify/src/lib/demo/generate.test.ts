@@ -11,35 +11,31 @@ const now = new Date("2026-11-11T12:00:00-05:00");
 
 describe("demo data", () => {
   const data = generateDemoData(program, tz, now);
-  const byPhone = (p: string) => data.customers.find((c) => c.phone === p)!;
+  const byName = (n: string) => data.customers.find((c) => c.phone === SHOWCASE.find((s) => s.firstName === n)!.phone)!;
+  const liveCheckIn = (n: string) => {
+    const out = checkIn(byName(n).state, program, { now, timeZone: tz }, () => 0.99);
+    if (!out.ok) throw new Error("refused");
+    return out;
+  };
 
-  it("creates showcase + crowd customers with visits", () => {
+  it("creates showcase + crowd customers with visits, stamps and squads", () => {
     expect(data.customers.length).toBeGreaterThan(30);
     expect(data.visits.length).toBeGreaterThan(150);
     expect(new Set(data.customers.map((c) => c.phone)).size).toBe(data.customers.length);
+    expect(data.customers.some((c) => Object.keys(c.state.game.stamps).length > 2)).toBe(true);
+    expect(data.squads?.[0].members.length).toBe(3);
   });
 
   it("showcase stories hold up", () => {
-    const layla = byPhone(SHOWCASE[0].phone);
-    expect(progressFor(layla.state.streakVisits, program).visitsToTarget).toBe(1);
-
-    const omar = byPhone(SHOWCASE[1].phone);
-    expect(omar.state.streakVisits).toBe(7);
-
-    const maria = byPhone(SHOWCASE[2].phone);
-    const out = checkIn(maria.state, program, { now, timeZone: tz }, () => 0.99);
-    expect(out.ok && out.rewards.map((r) => r.kind)).toEqual(["welcome"]);
-
-    const noor = byPhone(SHOWCASE[3].phone);
-    const nOut = checkIn(noor.state, program, { now, timeZone: tz }, () => 0.99);
-    expect(nOut.ok && nOut.rewards.map((r) => r.kind)).toContain("birthday");
-
-    const sam = byPhone(SHOWCASE[4].phone);
-    const sOut = checkIn(sam.state, program, { now, timeZone: tz }, () => 0.99);
-    expect(sOut.ok && sOut.events.map((e) => e.type)).toEqual(["saver_used"]);
-
-    const jake = byPhone(SHOWCASE[5].phone);
-    expect(progressFor(jake.state.streakVisits, program).isTopLevel).toBe(true);
+    expect(liveCheckIn("Layla").events).toContainEqual({ type: "level_up", toLevel: "regular" });
+    expect(data.rewards.filter((r) => r.customerIndex === data.customers.indexOf(byName("Omar")) && !r.redeemedAt).length).toBeGreaterThanOrEqual(3);
+    expect(liveCheckIn("Maria").rewards.map((r) => r.kind)).toContain("welcome");
+    expect(liveCheckIn("Noor").rewards.map((r) => r.kind)).toContain("birthday");
+    expect(liveCheckIn("Sam").events.map((e) => e.type)).toContain("saver_used");
+    expect(progressFor(byName("Jake").state.xp, program).isTopLevel).toBe(true);
+    const zara = byName("Zara").state.game;
+    expect(zara.mystery.filter((b) => !b.openedAt)).toHaveLength(1);
+    expect(Object.keys(zara.stamps)).toEqual(expect.arrayContaining(["honey-latte", "maple-cold-brew"]));
   });
 
   it("is the same every time (fixed seed)", () => {

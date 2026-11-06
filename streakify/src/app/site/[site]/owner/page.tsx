@@ -10,6 +10,7 @@ import { CafeLogo } from "@/components/CafeLogo";
 import { Leaderboard } from "@/components/Leaderboard";
 import { VisitsChart } from "@/components/VisitsChart";
 import { getRepo } from "@/lib/data";
+import { mysteryBudgetLeft } from "@/lib/checkin/service";
 import { monthlyLeaderboard } from "@/lib/leaderboard";
 import { formatMoney } from "@/lib/money";
 import { KIND_LABELS, computeStats } from "@/lib/stats";
@@ -58,6 +59,15 @@ async function Dashboard({ params, searchParams }: PageProps<"/site/[site]/owner
     monthlyLeaderboard(cafe, new Date(), month),
   ]);
   const s = computeStats(cafe, customers, visits, rewards, from, monthEnd);
+  const budgetLeft = await mysteryBudgetLeft(cafe);
+  const badgeCounts = cafe.program.badges
+    .map((b) => ({ name: b.name, icon: b.icon, count: customers.filter((c) => c.game.badges[b.key]).length }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+  const stampCounts = cafe.program.menu.items
+    .map((i) => ({ name: i.name, icon: i.icon, count: customers.filter((c) => c.game.stamps[i.id]).length }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
   const money = (c: number) => formatMoney(c, cafe.currency);
   const isCurrent = month === thisMonth;
   const prev = previousMonth(month);
@@ -162,6 +172,22 @@ async function Dashboard({ params, searchParams }: PageProps<"/site/[site]/owner
             {s.levelCounts.map((l) => `${l.level} ${l.count}`).join(" · ")}. {s.smsOptIns} members agreed to texts.</p>
         </section>
       </div>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl bg-brand-surface p-5">
+          <h2 className="font-semibold">🫖 Mystery dallah budget</h2>
+          <p className="mt-2 text-2xl font-bold tabular-nums">{money(cafe.program.mystery.monthlyBudgetCents - budgetLeft)} <span className="text-base font-normal text-brand-muted">of {money(cafe.program.mystery.monthlyBudgetCents)} used this month</span></p>
+          <p className="mt-1 text-sm text-brand-muted">When it runs out, dallahs only give XP prizes, so you never overspend.</p>
+        </div>
+        <div className="rounded-2xl bg-brand-surface p-5">
+          <h2 className="font-semibold">🏅 Most-earned badges</h2>
+          <ul className="mt-2 space-y-1 text-sm">{badgeCounts.map((b) => <li key={b.name} className="flex justify-between"><span>{b.icon} {b.name}</span><span className="tabular-nums text-brand-muted">{b.count}</span></li>)}</ul>
+        </div>
+        <div className="rounded-2xl bg-brand-surface p-5">
+          <h2 className="font-semibold">☕ Most-tried drinks (passport)</h2>
+          <ul className="mt-2 space-y-1 text-sm">{stampCounts.map((b) => <li key={b.name} className="flex justify-between"><span>{b.icon} {b.name}</span><span className="tabular-nums text-brand-muted">{b.count}</span></li>)}</ul>
+        </div>
+      </section>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Leaderboard entries={board} prize={cafe.program.leaderboardPrize ?? null} monthLabel={formatMonth(month)} />

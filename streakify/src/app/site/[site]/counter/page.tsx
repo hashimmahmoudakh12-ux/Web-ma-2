@@ -6,10 +6,13 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { ForceDark } from "@/components/CafeTheme";
+import { getRepo } from "@/lib/data";
 import { SHOWCASE } from "@/lib/demo/generate";
+import { monthlyLeaderboard } from "@/lib/leaderboard";
 import { privacyNotice, smsConsentText } from "@/lib/privacy";
 import { resolveCafe } from "@/lib/tenant";
-import { monthlyLeaderboard } from "@/lib/leaderboard";
+import { cafeBase } from "@/lib/urls";
 import { isCounterUnlocked } from "./actions";
 import { Counter } from "./Counter";
 
@@ -20,22 +23,35 @@ async function CounterLoader({ params }: PageProps<"/site/[site]/counter">) {
   if (!cafe) notFound();
   const unlocked = await isCounterUnlocked(site);
   const leaderboard = unlocked ? await monthlyLeaderboard(cafe) : [];
+  const base = await cafeBase();
+  const showcase = cafe.isDemo
+    ? await Promise.all(
+        SHOWCASE.map(async ({ display, firstName, story, phone }) => {
+          const c = await getRepo().findCustomerByPhone(cafe.id, phone);
+          return { display, firstName, story, phoneUrl: c ? `${base}/me/${c.publicToken}` : null };
+        }),
+      )
+    : [];
   return (
-    <Counter
-      siteKey={site}
-      unlocked={unlocked}
-      cafe={{
-        name: cafe.name,
-        logoUrl: cafe.brand.logoUrl,
-        tagline: cafe.brand.tagline ?? null,
-        isDemo: cafe.isDemo,
-        privacyNotice: privacyNotice(cafe.name),
-        smsConsent: smsConsentText(cafe.name),
-        leaderboardPrize: cafe.program.leaderboardPrize ?? null,
-      }}
-      leaderboard={leaderboard.map(({ rank, firstName, visits }) => ({ rank, firstName, visits }))}
-      showcase={cafe.isDemo ? SHOWCASE.map(({ display, firstName, story }) => ({ display, firstName, story })) : []}
-    />
+    <>
+      <ForceDark brand={cafe.brand} />
+      <Counter
+        siteKey={site}
+        unlocked={unlocked}
+        cafe={{
+          name: cafe.name,
+          logoUrl: cafe.brand.logoUrl,
+          tagline: cafe.brand.tagline ?? null,
+          isDemo: cafe.isDemo,
+          privacyNotice: privacyNotice(cafe.name),
+          smsConsent: smsConsentText(cafe.name),
+          leaderboardPrize: cafe.program.leaderboardPrize ?? null,
+          referralsOn: cafe.program.referral.enabled,
+        }}
+        leaderboard={leaderboard.map(({ rank, firstName, visits }) => ({ rank, firstName, visits }))}
+        showcase={showcase}
+      />
+    </>
   );
 }
 
