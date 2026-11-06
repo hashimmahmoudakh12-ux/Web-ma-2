@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/*
+ * DESIGN SYSTEM (Apple Human Interface Guidelines inspired)
+ * - San Francisco on Apple devices via the system font stack
+ * - Brand colors injected per café by CafeTheme (light + dark)
+ * - Frosted glass, rounded cards, spring animations
+ */
+:root {
+  --brand-bg: #111111;
+  --brand-surface: #1c1c1e;
+  --brand-primary: #d4a24c;
+  --brand-on-primary: #111111;
+  --brand-text: #f5f5f7;
+  --brand-muted: #a1a1a6;
+  --spring: cubic-bezier(0.32, 0.72, 0, 1); /* iOS sheet curve */
+  --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@theme inline {
+  --color-brand-bg: var(--brand-bg);
+  --color-brand-surface: var(--brand-surface);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-on-primary: var(--brand-on-primary);
+  --color-brand-text: var(--brand-text);
+  --color-brand-muted: var(--brand-muted);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: -apple-system-headline, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --ease-spring: var(--spring);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Frosted glass for nav bars and sheets */
+.glass {
+  background: color-mix(in srgb, var(--brand-bg) 72%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+.glass-surface {
+  background: color-mix(in srgb, var(--brand-surface) 80%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+}
+
+/* Cards */
+.card {
+  background: var(--brand-surface);
+  border-radius: 22px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.06);
+}
+
+/* Press feedback like iOS */
+.pressable {
+  transition: transform 0.25s var(--spring), opacity 0.2s;
+}
+.pressable:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes wobble {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-12deg); }
+  40% { transform: rotate(10deg); }
+  60% { transform: rotate(-8deg); }
+  80% { transform: rotate(6deg); }
+}
+.animate-pop { animation: pop-in 0.6s var(--bounce) both; }
+.animate-fade { animation: fade-in 0.3s ease both; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-wobble { animation: wobble 0.8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
