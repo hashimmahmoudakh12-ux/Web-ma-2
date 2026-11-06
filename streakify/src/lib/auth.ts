@@ -11,11 +11,19 @@
  */
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-function secret(): string {
+/** Fallback when SESSION_SECRET is missing in production: random per server, so cookies can't be forged. */
+const ephemeral = randomBytes(32).toString("hex");
+
+export function sessionSecretConfigured() {
+  return (process.env.SESSION_SECRET ?? "").length >= 32;
+}
+
+export function secret(): string {
   const s = process.env.SESSION_SECRET;
   if (s && s.length >= 32) return s;
-  if (process.env.NODE_ENV === "production" && process.env.ALLOW_MEMORY_DB !== "true") {
-    throw new Error("SESSION_SECRET must be set (at least 32 characters) in production");
+  if (process.env.NODE_ENV === "production") {
+    // Still secure, but logins won't survive a server restart. /api/health flags this.
+    return ephemeral;
   }
   return "dev-only-secret-do-not-use-in-production-0000";
 }

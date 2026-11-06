@@ -23,6 +23,7 @@
  */
 import "server-only";
 import { createHmac } from "node:crypto";
+import { secret } from "../auth";
 import http2 from "node:http2";
 import { PKPass } from "passkit-generator";
 import type { Cafe, Customer } from "../data";
@@ -40,8 +41,7 @@ export const passTypeId = () => env("APPLE_PASS_TYPE_ID") ?? "";
 
 /** Per-pass secret Wallet sends back to us; derived, so nothing to store. */
 export function passAuthToken(serial: string): string {
-  const secret = env("SESSION_SECRET") ?? "dev-only-secret-do-not-use-in-production-0000";
-  return createHmac("sha256", secret).update(`wallet:${serial}`).digest("hex");
+  return createHmac("sha256", secret()).update(`wallet:${serial}`).digest("hex");
 }
 
 function rgb(hex: string) {

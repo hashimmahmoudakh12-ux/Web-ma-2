@@ -17,8 +17,10 @@ export function getRepo(): Repo {
   if (url && key) {
     repo = new SupabaseRepo(url, key);
   } else {
-    if (process.env.NODE_ENV === "production" && process.env.ALLOW_MEMORY_DB !== "true") {
-      throw new Error("Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+    // No database configured: run on demo data instead of crashing every page.
+    // The admin page and /api/health show a clear warning about this.
+    if (process.env.NODE_ENV === "production") {
+      console.warn("[streakify] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set: using in-memory demo data (resets on restart).");
     }
     repo = new MemoryRepo();
   }
