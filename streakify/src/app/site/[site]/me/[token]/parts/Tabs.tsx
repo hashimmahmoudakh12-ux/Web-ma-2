@@ -11,6 +11,8 @@ import { Sheet } from "@/components/Sheet";
 import type { AppData } from "../CustomerApp";
 import { createSquadAction, joinSquadAction, leaveSquadAction } from "../actions";
 import { MysteryCard } from "./Mystery";
+import { Dallah, mascotPalette, type Mood } from "@/components/motion/Dallah";
+import { sounds } from "@/components/game/feedback";
 import { InstallCard } from "./pwa";
 
 function Bar({ value, max, className = "" }: { value: number; max: number; className?: string }) {
@@ -35,11 +37,32 @@ function SectionTitle({ children, aside }: { children: React.ReactNode; aside?: 
 // HOME
 // ---------------------------------------------------------------------------
 
+function Mascot({ worried, primary }: { worried: boolean; primary: string }) {
+  const [mood, setMood] = useState<Mood | null>(null);
+  return (
+    <div className="absolute right-2 top-2">
+      <Dallah
+        size={78}
+        palette={mascotPalette(primary)}
+        mood={mood ?? (worried ? "worried" : "idle")}
+        label={worried ? "Your dallah looks worried: your streak ends soon" : "Your dallah mascot"}
+        onClick={() => {
+          sounds.squish();
+          haptics.tap();
+          setMood("cheer");
+          setTimeout(() => setMood(null), 1600);
+        }}
+      />
+    </div>
+  );
+}
+
 export function HomeTab({ data }: { data: AppData }) {
   const tier = flameTier(data.streakWeeks);
   return (
     <>
       <section className="card relative overflow-hidden p-5">
+        <Mascot worried={Boolean(data.risk)} primary={data.cafe.primary} />
         <p className="text-brand-muted">Hi {data.me.firstName} 👋</p>
         <div className="mt-1 flex items-center gap-4">
           <Flame weeks={data.streakWeeks} size={104} />

@@ -40,6 +40,7 @@ async function CounterLoader({ params }: PageProps<"/site/[site]/counter">) {
         unlocked={unlocked}
         cafe={{
           name: cafe.name,
+          primary: cafe.brand.colors.primary,
           logoUrl: cafe.brand.logoUrl,
           tagline: cafe.brand.tagline ?? null,
           isDemo: cafe.isDemo,

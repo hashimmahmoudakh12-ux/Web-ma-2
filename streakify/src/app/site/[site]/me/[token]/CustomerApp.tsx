@@ -15,6 +15,7 @@ import { Celebrations } from "./parts/Celebrations";
 import { BadgesTab, FriendsTab, HomeTab, PassportTab } from "./parts/Tabs";
 import { SettingsSheet } from "./parts/SettingsSheet";
 import { useServiceWorker } from "./parts/pwa";
+import { CheckInFilm } from "./parts/CheckInFilm";
 
 export type AppData = {
   siteKey: string;
@@ -28,6 +29,7 @@ export type AppData = {
   fraction: number;
   progressLine: string;
   streakWeeks: number;
+  lastVisit: { at: string; xp: number } | null;
   goalMet: boolean;
   deadlineLabel: string;
   deadlineAt: string;
@@ -68,6 +70,7 @@ export function CustomerApp({ data }: { data: AppData }) {
   const [tab, setTab] = useState<TabId>("home");
   const [muted, setMutedState] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [filmDone, setFilmDone] = useState(false);
   useServiceWorker();
 
   useEffect(() => {
@@ -145,7 +148,8 @@ export function CustomerApp({ data }: { data: AppData }) {
       </nav>
 
       <SettingsSheet open={settings} onClose={() => setSettings(false)} data={data} />
-      <Celebrations data={data} />
+      <CheckInFilm data={data} onDone={() => setFilmDone(true)} />
+      {filmDone && <Celebrations data={data} />}
     </div>
   );
 }

@@ -11,7 +11,8 @@ import { Gift, QrCode, Smartphone, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { CafeLogo } from "@/components/CafeLogo";
-import { Flame } from "@/components/game/Flame";
+import { CheckInScene } from "@/components/motion/CheckInScene";
+import { mascotPalette } from "@/components/motion/Dallah";
 import { Keypad, formatTyped } from "@/components/Keypad";
 import { ProgressBar } from "@/components/ProgressBar";
 import type { CheckInResult, CheckInView } from "@/lib/checkin/service";
@@ -20,6 +21,7 @@ import { Scanner } from "./Scanner";
 
 type CafeInfo = {
   name: string;
+  primary: string;
   logoUrl: string | null;
   tagline: string | null;
   isDemo: boolean;
@@ -166,7 +168,7 @@ export function Counter({
           />
         )}
 
-        {step.kind === "result" && <ResultStep siteKey={siteKey} view={step.view} onDone={home} />}
+        {step.kind === "result" && <ResultStep siteKey={siteKey} view={step.view} primary={cafe.primary} onDone={home} />}
 
         {step.kind === "notice" && (
           <div className="mx-auto max-w-xl text-center">
@@ -433,7 +435,7 @@ function Check({ checked, onChange, children }: { checked: boolean; onChange: (v
   );
 }
 
-function ResultStep({ siteKey, view: initial, onDone }: { siteKey: string; view: CheckInView; onDone: () => void }) {
+function ResultStep({ siteKey, view: initial, primary, onDone }: { siteKey: string; view: CheckInView; primary: string; onDone: () => void }) {
   const [view, setView] = useState(initial);
   const [confirming, setConfirming] = useState<CheckInView["rewards"][number] | null>(null);
   const [stamped, setStamped] = useState<string[]>([]);
@@ -474,8 +476,9 @@ function ResultStep({ siteKey, view: initial, onDone }: { siteKey: string; view:
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <section className="space-y-4">
+        {/* short stop-motion check-in (under 2 s, silent so the counter stays calm) */}
+        <CheckInScene variant="short" streakWeeks={view.streakWeeks} xpGained={view.xpGained} palette={mascotPalette(primary)} sound={false} className="max-h-[260px]" />
         <div className="flex items-center gap-4">
-          <Flame weeks={view.streakWeeks} size={84} />
           <div>
             <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{headline}</h1>
             <p className="text-brand-muted">

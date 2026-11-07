@@ -53,6 +53,7 @@ export type GameState = {
   mystery: MysteryBox[];
   inbox: Celebration[];
   seenAt: string | null;
+  lastVisitXp: number; // XP earned on the most recent check-in (for the phone's check-in film)
 };
 
 export type StreakState = {
@@ -90,6 +91,7 @@ export function newGameState(): GameState {
     mystery: [],
     inbox: [],
     seenAt: null,
+    lastVisitXp: 0,
   };
 }
 
@@ -578,6 +580,7 @@ export function checkIn(
   finalize(s, c, program, { clock, squadStreakWeeks: ctx.squadStreakWeeks, visitHour: localHour(clock.now, clock.timeZone) }, levelBefore);
 
   const xpGained = c.xpLines.reduce((a, l) => a + l.xp, 0);
+  s.game.lastVisitXp = xpGained;
   return { ok: true, before, state: s, visit: { localDate: today, weekStart: week, xp: xpGained }, xpGained, ...c };
 }
 

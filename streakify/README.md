@@ -247,6 +247,15 @@ npm run lint
 | `app/site/[site]/counter/Scanner.tsx` | Camera QR scanner for Wallet passes (USB/Bluetooth scanners also work). |
 | `app/site/[site]/owner/settings/SettingsForm.tsx` | Editors for every game setting. |
 
+### Stop-motion animation (in progress)
+| File | In simple terms |
+|---|---|
+| `components/motion/stopmotion.ts` | The 12-frames-per-second clock, the "on twos" stepped timing helper, and reduced-motion detection. |
+| `components/motion/Dallah.tsx` | The clay dallah mascot (pure SVG, re-colored per café): idle, pour, dance, worried and cheer moods, plus the clay/"boil" filters. |
+| `components/motion/CheckInScene.tsx` | The check-in film: the dallah pours a finjan and the steam forms the streak number. Full version for phones, short (under 2 s) for the tablet. |
+| `app/globals.css` (bottom) | The stepped mascot poses, film grain, vignette and candle flicker. |
+| `app/(streakify)/lab/*` | Preview pages: `/lab`, `/lab/film`, `/lab/moods`. |
+
 ## 7. Known limits
 - Wrong-password lockouts are tracked per server instance. For a big rollout, move them into the database or Vercel KV.
 - Toast and Twilio code follows their docs but hasn't run against live accounts. Test with sandbox credentials first.

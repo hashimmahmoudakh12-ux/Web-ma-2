@@ -49,7 +49,52 @@ function tone(freq: number, start: number, dur: number, type: OscillatorType = "
   o.stop(t + dur + 0.05);
 }
 
+/** Filtered noise burst: the base of clay, pouring and paper sounds. */
+function noise(start: number, dur: number, type: BiquadFilterType, freq: number, gain = 0.2, q = 1, sweepTo?: number) {
+  const a = audio();
+  if (!a) return;
+  const len = Math.ceil(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const f = a.createBiquadFilter();
+  f.type = type;
+  f.Q.value = q;
+  const t = a.currentTime + start;
+  f.frequency.setValueAtTime(freq, t);
+  if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.03, dur / 4));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(a.destination);
+  src.start(t);
+  src.stop(t + dur + 0.02);
+}
+
 export const sounds = {
+  /** Soft clay squish (mascot moves) */
+  squish() {
+    noise(0, 0.16, "lowpass", 900, 0.25, 4, 180);
+    tone(140, 0, 0.12, "sine", 0.08);
+  },
+  /** Coffee pouring from the dallah */
+  pour(seconds = 0.9) {
+    noise(0, seconds, "bandpass", 1300, 0.12, 3, 700);
+    for (let i = 0; i < 5; i++) tone(380 + Math.random() * 200, 0.1 + i * (seconds / 6), 0.07, "sine", 0.03);
+  },
+  /** Little cup clink */
+  clink() {
+    tone(2350, 0, 0.35, "sine", 0.1);
+    tone(3520, 0.005, 0.25, "sine", 0.06);
+  },
+  /** Paper cutout landing */
+  rustle() {
+    noise(0, 0.12, "highpass", 2500, 0.12, 0.7);
+    noise(0.07, 0.1, "highpass", 3500, 0.08, 0.7);
+  },
   /** Rising major arpeggio */
   levelUp() {
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.09, 0.35, "triangle"));

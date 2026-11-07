@@ -97,6 +97,7 @@ async function buildData(cafe: Cafe, token: string, site: string): Promise<AppDa
     fraction: p.fraction,
     progressLine: progressLine(state, program),
     streakWeeks: state.streakWeeks,
+    lastVisit: raw.lastVisitAt ? { at: raw.lastVisitAt, xp: g.lastVisitXp ?? 0 } : null,
     goalMet: weekGoalMet(state, program, clock),
     deadlineLabel: formatDay(deadline),
     deadlineAt: zonedInstant(addDays(deadline, 1), 0, 0, cafe.timezone).toISOString(),
