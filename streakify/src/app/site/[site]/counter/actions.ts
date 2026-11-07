@@ -7,9 +7,9 @@
  */
 import QRCode from "qrcode";
 import { z } from "zod";
-import { throttle, verifySecret } from "@/lib/auth";
+import { throttle, verifySecret } from "@/lib/secrets";
 import { checkInByPhone, checkInByToken, recordItems, redeemReward, signUpAndCheckIn, type CheckInResult, type RedeemResult } from "@/lib/checkin/service";
-import { getRepo, type Cafe } from "@/lib/data";
+import { getRepo, isLive, type Cafe } from "@/lib/data";
 import { generateDemoData } from "@/lib/demo/generate";
 import { demoCafe } from "@/lib/demo/cafes";
 import { parseBrand } from "@/lib/brand";
@@ -23,6 +23,7 @@ import { absoluteCafeUrl } from "@/lib/urls";
 async function authorizedCafe(siteKey: string): Promise<Cafe> {
   const cafe = await resolveCafe(siteKey);
   if (!cafe) throw new Error("Unknown café");
+  if (!isLive(cafe)) throw new Error("PAUSED");
   if (cafe.isDemo) return cafe; // demo café is open to everyone (data is fake and resettable)
   if (!(await hasCafeAccess("counter", cafe))) throw new Error("This tablet is locked. Enter the counter PIN.");
   return cafe;

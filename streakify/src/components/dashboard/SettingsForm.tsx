@@ -8,7 +8,6 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import type { Brand } from "@/lib/brand";
 import type { Badge, BadgeRule, CafeEvent, Challenge, Level, MenuCategory, MenuItem, MysteryPrize, Program, RewardSpec } from "@/lib/program";
-import { saveSettings } from "../actions";
 
 const input = "w-full rounded-lg bg-brand-bg px-3 py-2 outline-none ring-brand-primary focus:ring-2";
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 7)}`;
@@ -101,8 +100,23 @@ function AddButton({ onClick, children }: { onClick: () => void; children: React
 
 const SECTIONS = ["Levels & XP", "Badges", "Menu & passport", "Challenges", "Events", "Mystery dallah", "Streak & social", "Look"] as const;
 type Section = (typeof SECTIONS)[number];
+/** Parts only Streakify (the admin) can change. Owners see a note instead. */
+const ADMIN_ONLY: Section[] = ["Menu & passport", "Look"];
 
-export function SettingsForm({ siteKey, program: initial, brand: initialBrand }: { siteKey: string; program: Program; brand: Brand; currency: string }) {
+export type SaveResult = { ok: boolean; message: string };
+
+export function SettingsForm({
+  program: initial,
+  brand: initialBrand,
+  mode,
+  save,
+}: {
+  program: Program;
+  brand: Brand;
+  mode: "owner" | "admin";
+  save: (program: Program, brand: Brand) => Promise<SaveResult>;
+}) {
+  const sections = mode === "admin" ? SECTIONS : SECTIONS.filter((x) => !ADMIN_ONLY.includes(x));
   const [p, setP] = useState<Program>(initial);
   const [brand, setBrand] = useState<Brand>(initialBrand);
   const [section, setSection] = useState<Section>("Levels & XP");
@@ -126,12 +140,12 @@ export function SettingsForm({ siteKey, program: initial, brand: initialBrand }:
       className="space-y-5"
       onSubmit={(e) => {
         e.preventDefault();
-        start(async () => setMsg(await saveSettings(siteKey, p, brand)));
+        start(async () => setMsg(await save(p, brand)));
       }}
     >
       <div className="glass sticky top-0 z-10 -mx-4 overflow-x-auto px-4 py-2" data-no-swipe>
         <div className="flex w-max gap-1 rounded-xl bg-brand-surface p-1">
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button key={s} type="button" onClick={() => setSection(s)} className={`rounded-lg px-3 py-1.5 text-sm whitespace-nowrap ${section === s ? "bg-brand-primary font-semibold text-brand-on-primary" : "text-brand-muted"}`}>
               {s}
             </button>
@@ -139,6 +153,12 @@ export function SettingsForm({ siteKey, program: initial, brand: initialBrand }:
         </div>
       </div>
 
+      {mode === "owner" && (
+        <p className="rounded-2xl bg-brand-surface p-4 text-sm text-brand-muted">
+          Your logo, colors, menu, subdomain, plan and the &ldquo;Powered by Streakify&rdquo; line are managed by Streakify.{" "}
+          <strong className="text-brand-text">Contact Streakify to change these.</strong>
+        </p>
+      )}
       <section className="card space-y-4 p-5">
         {section === "Levels & XP" && (
           <>
@@ -223,7 +243,7 @@ export function SettingsForm({ siteKey, program: initial, brand: initialBrand }:
               </div>
             ))}
             {menu.categories.length > 0 && (
-              <AddButton onClick={() => setMenu({ items: [...menu.items, { id: uid("item"), name: "New drink", icon: "☕", categoryId: menu.categories[0].id }] })}>Add menu item</AddButton>
+              <AddButton onClick={() => setMenu({ items: [...menu.items, { id: uid("item"), name: "New drink", icon: "☕", categoryId: menu.categories[0].id, priceCents: 0, costCents: 0 }] })}>Add menu item</AddButton>
             )}
           </>
         )}

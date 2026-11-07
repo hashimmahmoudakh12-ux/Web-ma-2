@@ -18,8 +18,11 @@ export type CafeSeed = {
   currency: string;
   isDemo: boolean;
   counterPin: string; // stored hashed
-  ownerPassword: string; // stored hashed
   ownerEmail: string | null;
+  /** Login used ONLY when running without Supabase (local/demo mode). */
+  localOwnerLogin: { email: string; password: string };
+  status: "trial" | "active";
+  planPriceCents: number;
   brand: Brand;
   program: Program;
 };
@@ -95,8 +98,10 @@ export const sanaaCafe: CafeSeed = {
   currency: "USD",
   isDemo: false,
   counterPin: "2580",
-  ownerPassword: "sanaa-owner",
   ownerEmail: null,
+  localOwnerLogin: { email: "owner@sanaacafe.example", password: "sanaa-owner" },
+  status: "active",
+  planPriceCents: 0,
   brand: {
     logoUrl: "/cafes/sanaacafe/logo.png",
     colors: {
@@ -127,19 +132,19 @@ export const sanaaCafe: CafeSeed = {
         { id: "sweets", name: "Sweets", icon: "🍯" },
       ],
       items: [
-        { id: "adeni-chai", name: "Adeni Chai", categoryId: "yemeni", icon: "🫖" },
-        { id: "qishr", name: "Qishr", categoryId: "yemeni", icon: "🌿" },
-        { id: "jubani", name: "Jubani Coffee", categoryId: "yemeni", icon: "🫘" },
-        { id: "mofawar", name: "Mofawar", categoryId: "yemeni", icon: "🏺" },
-        { id: "hawaij-latte", name: "Hawaij Latte", categoryId: "yemeni", icon: "🥛" },
-        { id: "espresso", name: "Espresso", categoryId: "espresso", icon: "☕" },
-        { id: "cortado", name: "Cortado", categoryId: "espresso", icon: "🥃" },
-        { id: "latte", name: "Latte", categoryId: "espresso", icon: "🥛" },
-        { id: "mango", name: "Mango Refresher", categoryId: "refreshers", icon: "🥭" },
-        { id: "hibiscus", name: "Hibiscus Refresher", categoryId: "refreshers", icon: "🌺" },
-        { id: "rose-lemonade", name: "Rose Lemonade", categoryId: "refreshers", icon: "🌹" },
-        { id: "bint-al-sahn", name: "Bint Al Sahn", categoryId: "sweets", icon: "🍯" },
-        { id: "date-cookie", name: "Date Cookie", categoryId: "sweets", icon: "🍪" },
+        { id: "adeni-chai", name: "Adeni Chai", categoryId: "yemeni", icon: "🫖", priceCents: 550, costCents: 120 },
+        { id: "qishr", name: "Qishr", categoryId: "yemeni", icon: "🌿", priceCents: 550, costCents: 120 },
+        { id: "jubani", name: "Jubani Coffee", categoryId: "yemeni", icon: "🫘", priceCents: 550, costCents: 120 },
+        { id: "mofawar", name: "Mofawar", categoryId: "yemeni", icon: "🏺", priceCents: 550, costCents: 120 },
+        { id: "hawaij-latte", name: "Hawaij Latte", categoryId: "yemeni", icon: "🥛", priceCents: 550, costCents: 120 },
+        { id: "espresso", name: "Espresso", categoryId: "espresso", icon: "☕", priceCents: 450, costCents: 90 },
+        { id: "cortado", name: "Cortado", categoryId: "espresso", icon: "🥃", priceCents: 450, costCents: 90 },
+        { id: "latte", name: "Latte", categoryId: "espresso", icon: "🥛", priceCents: 450, costCents: 90 },
+        { id: "mango", name: "Mango Refresher", categoryId: "refreshers", icon: "🥭", priceCents: 600, costCents: 120 },
+        { id: "hibiscus", name: "Hibiscus Refresher", categoryId: "refreshers", icon: "🌺", priceCents: 600, costCents: 120 },
+        { id: "rose-lemonade", name: "Rose Lemonade", categoryId: "refreshers", icon: "🌹", priceCents: 600, costCents: 120 },
+        { id: "bint-al-sahn", name: "Bint Al Sahn", categoryId: "sweets", icon: "🍯", priceCents: 450, costCents: 120 },
+        { id: "date-cookie", name: "Date Cookie", categoryId: "sweets", icon: "🍪", priceCents: 450, costCents: 120 },
       ],
     },
     // Dates are approximate. Check the moon-sighting dates each year and edit them in owner settings.
@@ -175,16 +180,16 @@ export const starterProgram: Program = {
       { id: "bakery", name: "Bakery", icon: "🥐" },
     ],
     items: [
-      { id: "honey-latte", name: "Honey Lavender Latte", categoryId: "signature", icon: "🍯" },
-      { id: "maple-cold-brew", name: "Maple Cold Brew", categoryId: "signature", icon: "🍁" },
-      { id: "cardamom-cortado", name: "Cardamom Cortado", categoryId: "signature", icon: "🌿" },
-      { id: "espresso", name: "Espresso", categoryId: "espresso", icon: "☕" },
-      { id: "cappuccino", name: "Cappuccino", categoryId: "espresso", icon: "☁️" },
-      { id: "latte", name: "Latte", categoryId: "espresso", icon: "🥛" },
-      { id: "berry", name: "Berry Refresher", categoryId: "refreshers", icon: "🫐" },
-      { id: "peach-tea", name: "Peach Iced Tea", categoryId: "refreshers", icon: "🍑" },
-      { id: "croissant", name: "Croissant", categoryId: "bakery", icon: "🥐" },
-      { id: "muffin", name: "Blueberry Muffin", categoryId: "bakery", icon: "🧁" },
+      { id: "honey-latte", name: "Honey Lavender Latte", categoryId: "signature", icon: "🍯", priceCents: 650, costCents: 150 },
+      { id: "maple-cold-brew", name: "Maple Cold Brew", categoryId: "signature", icon: "🍁", priceCents: 650, costCents: 150 },
+      { id: "cardamom-cortado", name: "Cardamom Cortado", categoryId: "signature", icon: "🌿", priceCents: 650, costCents: 150 },
+      { id: "espresso", name: "Espresso", categoryId: "espresso", icon: "☕", priceCents: 450, costCents: 90 },
+      { id: "cappuccino", name: "Cappuccino", categoryId: "espresso", icon: "☁️", priceCents: 450, costCents: 90 },
+      { id: "latte", name: "Latte", categoryId: "espresso", icon: "🥛", priceCents: 450, costCents: 90 },
+      { id: "berry", name: "Berry Refresher", categoryId: "refreshers", icon: "🫐", priceCents: 600, costCents: 120 },
+      { id: "peach-tea", name: "Peach Iced Tea", categoryId: "refreshers", icon: "🍑", priceCents: 600, costCents: 120 },
+      { id: "croissant", name: "Croissant", categoryId: "bakery", icon: "🥐", priceCents: 400, costCents: 110 },
+      { id: "muffin", name: "Blueberry Muffin", categoryId: "bakery", icon: "🧁", priceCents: 400, costCents: 110 },
     ],
   },
   events: [],
@@ -199,8 +204,10 @@ export const demoCafe: CafeSeed = {
   currency: "USD",
   isDemo: true,
   counterPin: "0000",
-  ownerPassword: "demo",
   ownerEmail: null,
+  localOwnerLogin: { email: "owner@harborbean.example", password: "demo" },
+  status: "trial",
+  planPriceCents: 0,
   brand: {
     logoUrl: null,
     colors: {

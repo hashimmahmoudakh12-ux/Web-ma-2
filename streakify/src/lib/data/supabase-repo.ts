@@ -8,11 +8,12 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { parseBrand } from "../brand";
-import { parseProgram } from "../program";
+import { parseProgram, type Program } from "../program";
 import { normalizeGame, type StreakState } from "../streak/engine";
 import { referralCode } from "./memory-repo";
 import {
   type Cafe,
+  type AuditEntry,
   type CafePatch,
   type NewCafe,
   type RewardRow,
@@ -45,10 +46,15 @@ function toCafe(r: Row): Cafe {
     brand: parseBrand(r.brand),
     program: parseProgram(r.program),
     counterPinHash: r.counter_pin_hash,
-    ownerPasswordHash: r.owner_password_hash ?? null,
     ownerEmail: r.owner_email ?? null,
     posProvider: r.pos_provider,
     posConfig: r.pos_config ?? {},
+    status: r.status ?? "active",
+    planPriceCents: r.plan_price_cents ?? 0,
+    setupFeePaid: r.setup_fee_paid ?? false,
+    address: r.address ?? null,
+    ownerName: r.owner_name ?? null,
+    ownerPhone: r.owner_phone ?? null,
   };
 }
 
@@ -130,8 +136,54 @@ export class SupabaseRepo implements Repo {
   readonly kind = "supabase" as const;
   private db: SupabaseClient;
 
-  constructor(url: string, serviceRoleKey: string) {
-    this.db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+  /**
+   * Pass url + service-role key for full server access, OR an existing client
+   * (e.g. a logged-in owner's client, whose queries are limited by Row Level Security).
+   */
+  constructor(urlOrClient: string | SupabaseClient, serviceRoleKey?: string) {
+    this.db = typeof urlOrClient === "string" ? createClient(urlOrClient, serviceRoleKey!, { auth: { persistSession: false } }) : urlOrClient;
+  }
+
+  async deleteCafe(cafeId: string) {
+    // Customers, visits, rewards, squads... cascade from the café row.
+    fail((await this.db.from("cafes").delete().eq("id", cafeId)).error);
+  }
+
+  async lastVisitAt(cafeId: string) {
+    const { data, error } = await this.db.from("visits").select("created_at").eq("cafe_id", cafeId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    fail(error);
+    return (data?.created_at as string | undefined) ?? null;
+  }
+
+  async audit(e: AuditEntry) {
+    const { error } = await this.db.from("audit_log").insert({
+      actor_id: e.actorId,
+      actor_email: e.actorEmail,
+      actor_role: e.actorRole,
+      action: e.action,
+      cafe_id: e.cafeId,
+      details: e.details ?? {},
+      ip: e.ip ?? null,
+    });
+    if (error) console.error("[audit] could not write:", error.message);
+  }
+
+  async listAudit(filter: { cafeId?: string; limit?: number }) {
+    let q = this.db.from("audit_log").select("*").order("at", { ascending: false }).limit(filter.limit ?? 50);
+    if (filter.cafeId) q = q.eq("cafe_id", filter.cafeId);
+    const { data, error } = await q;
+    fail(error);
+    return (data ?? []).map((r) => ({
+      id: String(r.id),
+      at: r.at,
+      actorId: r.actor_id,
+      actorEmail: r.actor_email,
+      actorRole: r.actor_role,
+      action: r.action,
+      cafeId: r.cafe_id,
+      details: r.details,
+      ip: r.ip,
+    }));
   }
 
   async getCafeBySlug(slug: string) {
@@ -523,14 +575,26 @@ export class SupabaseRepo implements Repo {
     if (patch.brand !== undefined) row.brand = patch.brand;
     if (patch.program !== undefined) row.program = patch.program;
     if (patch.counterPinHash !== undefined) row.counter_pin_hash = patch.counterPinHash;
-    if (patch.ownerPasswordHash !== undefined) row.owner_password_hash = patch.ownerPasswordHash;
+    if (patch.slug !== undefined) row.slug = patch.slug;
+    if (patch.status !== undefined) row.status = patch.status;
+    if (patch.planPriceCents !== undefined) row.plan_price_cents = patch.planPriceCents;
+    if (patch.setupFeePaid !== undefined) row.setup_fee_paid = patch.setupFeePaid;
+    if (patch.address !== undefined) row.address = patch.address;
+    if (patch.ownerName !== undefined) row.owner_name = patch.ownerName;
+    if (patch.ownerPhone !== undefined) row.owner_phone = patch.ownerPhone;
+    if (patch.isDemo !== undefined) row.is_demo = patch.isDemo;
     if (patch.ownerEmail !== undefined) row.owner_email = patch.ownerEmail;
     if (patch.posProvider !== undefined) row.pos_provider = patch.posProvider;
     if (patch.posConfig !== undefined) row.pos_config = patch.posConfig;
     const { data, error } = await this.db.from("cafes").update(row).eq("id", cafeId).select("*").single();
-    if (error?.code === "23505") throw new Error("Another café already uses that domain");
+    if (error?.code === "23505") throw new Error(error.message.includes("slug") ? "That subdomain is already taken" : "Another café already uses that domain");
     fail(error);
     return toCafe(data!);
+  }
+
+  async ownerUpdateProgram(cafeId: string, program: Program) {
+    const { error } = await this.db.rpc("owner_update_program", { p_cafe: cafeId, p_program: program });
+    if (error) throw new Error(error.code === "42501" ? "Not allowed" : error.message);
   }
 
   async createCafe(input: NewCafe) {
@@ -545,8 +609,13 @@ export class SupabaseRepo implements Repo {
         brand: input.brand,
         program: input.program,
         counter_pin_hash: input.counterPinHash,
-        owner_password_hash: input.ownerPasswordHash,
         owner_email: input.ownerEmail,
+        status: input.status ?? "trial",
+        plan_price_cents: input.planPriceCents ?? 0,
+        setup_fee_paid: input.setupFeePaid ?? false,
+        address: input.address ?? null,
+        owner_name: input.ownerName ?? null,
+        owner_phone: input.ownerPhone ?? null,
       })
       .select("*")
       .single();

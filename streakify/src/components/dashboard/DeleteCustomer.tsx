@@ -1,9 +1,9 @@
 "use client";
 import { useState, useTransition } from "react";
-import { deleteCustomer } from "./actions";
+import type { SaveResult } from "./SettingsForm";
 
 /** Privacy requests: "please delete my data". */
-export function DeleteCustomer({ siteKey }: { siteKey: string }) {
+export function DeleteCustomer({ onDelete }: { onDelete: (phone: string) => Promise<SaveResult> }) {
   const [phone, setPhone] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -17,7 +17,7 @@ export function DeleteCustomer({ siteKey }: { siteKey: string }) {
           disabled={pending || !phone}
           onClick={() => {
             if (!confirm("Delete this customer permanently?")) return;
-            start(async () => setMsg((await deleteCustomer(siteKey, phone)).message));
+            start(async () => setMsg((await onDelete(phone)).message));
           }}
           className="rounded-lg bg-red-500/80 px-4 py-2 font-semibold text-white disabled:opacity-40"
         >

@@ -11,9 +11,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:seed": "tsx --conditions=react-server scripts/seed.ts",
-    "set-pin": "tsx --conditions=react-server scripts/set-pin.ts"
+    "set-pin": "tsx --conditions=react-server scripts/set-pin.ts",
+    "create-admin": "tsx --conditions=react-server scripts/create-admin.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
     "canvas-confetti": "^1.9.4",
     "gsap": "^3.15.1",

@@ -4,7 +4,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
-import { hashSecret } from "../src/lib/auth";
+import { hashSecret } from "../src/lib/secrets";
 
 async function main() {
   const [slug, pin] = process.argv.slice(2);

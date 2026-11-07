@@ -10,7 +10,7 @@
  * same customer at once, and afterwards refreshes their Wallet passes.
  */
 import "server-only";
-import { getRepo, ConflictError, DuplicatePhoneError, type Cafe, type Customer, type Reward } from "../data";
+import { getRepo, ConflictError, DuplicatePhoneError, type Cafe, type Customer, type Repo, type Reward } from "../data";
 import { formatMoney } from "../money";
 import { PRIVACY_VERSION, smsConsentText } from "../privacy";
 import {
@@ -323,9 +323,9 @@ export async function recordItems(cafe: Cafe, customerId: string, itemIds: strin
 // Mystery dallah (customer's phone)
 // ---------------------------------------------------------------------------
 
-export async function mysteryBudgetLeft(cafe: Cafe, now = new Date()): Promise<number> {
+export async function mysteryBudgetLeft(cafe: Cafe, now = new Date(), repo: Repo = getRepo()): Promise<number> {
   const { from, to } = monthRange(localDate(now, cafe.timezone));
-  const rows = await getRepo().listRewardActivity(cafe.id, from, to);
+  const rows = await repo.listRewardActivity(cafe.id, from, to);
   const spent = rows.filter((r) => r.kind === "mystery" && r.earnedLocalDate >= from).reduce((a, r) => a + r.costCents, 0);
   return Math.max(0, cafe.program.mystery.monthlyBudgetCents - spent);
 }

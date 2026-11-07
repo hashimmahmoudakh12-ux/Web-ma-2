@@ -3,7 +3,8 @@
  * Shows only yes/no, never any secret values. Handy after deploying.
  */
 import { connection } from "next/server";
-import { sessionSecretConfigured } from "@/lib/auth";
+import { sessionSecretConfigured } from "@/lib/secrets";
+import { getAuth } from "@/lib/auth";
 import { getRepo } from "@/lib/data";
 import { pushConfigured } from "@/lib/push";
 import { twilioConfigured } from "@/lib/sms";
@@ -22,7 +23,8 @@ export async function GET() {
   }
   const yes = (b: boolean, fix: string) => (b ? "ok" : `missing: ${fix}`);
   checks.sessionSecret = yes(sessionSecretConfigured(), "set SESSION_SECRET (32+ characters) or logins reset when the server restarts");
-  checks.adminPassword = yes(Boolean(process.env.ADMIN_PASSWORD), "set ADMIN_PASSWORD to use /admin");
+  checks.logins = getAuth().kind === "supabase" ? "supabase (real accounts + 2FA)" : "demo accounts (set NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY + SUPABASE_SERVICE_ROLE_KEY for real logins)";
+  if (getAuth().kind === "local") checks.adminPassword = yes(Boolean(process.env.ADMIN_PASSWORD), "set ADMIN_PASSWORD (demo admin login) to use /admin");
   checks.cronSecret = yes(Boolean(process.env.CRON_SECRET), "set CRON_SECRET so the daily job can run");
   checks.rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "(not set: use /c/<cafe>/... links)";
   checks.optional = {

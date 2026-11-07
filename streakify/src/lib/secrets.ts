@@ -1,10 +1,10 @@
 /**
  * Simple, secure logins without user accounts.
  *
- * Three kinds of access, each proven by a signed cookie:
+ * Used for:
  *  - "counter:<cafeId>"  a tablet unlocked with the café's PIN (90 days)
- *  - "owner:<cafeId>"    the café owner, after typing their password (30 days)
- *  - "admin"             you, after typing ADMIN_PASSWORD (7 days)
+ *  - local demo logins when Supabase isn't connected (see lib/auth/local.ts)
+ * Real owner/admin logins use Supabase Auth (see lib/auth/).
  *
  * Secrets (PINs, passwords) are stored as salted scrypt hashes, never as text.
  * Cookies are signed with SESSION_SECRET so nobody can forge them.
@@ -62,15 +62,6 @@ export function verifyToken(token: string | undefined, scope: string, now = new 
   const expected = Buffer.from(sign(`${scopeB64}.${expires}`));
   const given = Buffer.from(sig);
   return expected.length === given.length && timingSafeEqual(expected, given);
-}
-
-/** Constant-time compare for the admin password (kept in an env variable). */
-export function checkAdminPassword(input: string): boolean {
-  const real = process.env.ADMIN_PASSWORD ?? (process.env.NODE_ENV === "production" ? "" : "admin");
-  if (!real) return false;
-  const a = Buffer.from(createHmac("sha256", "cmp").update(input).digest());
-  const b = Buffer.from(createHmac("sha256", "cmp").update(real).digest());
-  return timingSafeEqual(a, b);
 }
 
 /** Small in-memory brake on password guessing (per server instance). */

@@ -17,20 +17,50 @@ export type Cafe = {
   brand: Brand;
   program: Program;
   counterPinHash: string | null;
-  ownerPasswordHash: string | null;
   ownerEmail: string | null;
   posProvider: "none" | "toast";
   posConfig: Record<string, unknown>;
+  status: CafeStatus;
+  planPriceCents: number;
+  setupFeePaid: boolean;
+  address: string | null;
+  ownerName: string | null;
+  ownerPhone: string | null;
+};
+
+export type CafeStatus = "trial" | "active" | "paused" | "cancelled";
+/** Paused/cancelled cafés keep all data but stop check-ins and rewards. */
+export const isLive = (c: Pick<Cafe, "status">) => c.status === "trial" || c.status === "active";
+
+export type AuditEntry = {
+  id?: string;
+  at?: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorRole: string | null;
+  action: string;
+  cafeId: string | null;
+  details?: Record<string, unknown>;
+  ip?: string | null;
 };
 
 export type CafePatch = Partial<
-  Pick<Cafe, "name" | "customDomain" | "timezone" | "brand" | "program" | "counterPinHash" | "ownerPasswordHash" | "ownerEmail" | "posProvider" | "posConfig">
+  Pick<
+    Cafe,
+    | "slug" | "name" | "customDomain" | "timezone" | "brand" | "program" | "counterPinHash" | "ownerEmail" | "posProvider" | "posConfig"
+    | "status" | "planPriceCents" | "setupFeePaid" | "address" | "ownerName" | "ownerPhone" | "isDemo"
+  >
 >;
 
 export type NewCafe = Pick<Cafe, "slug" | "name" | "timezone" | "currency" | "brand" | "program" | "isDemo"> & {
   counterPinHash: string;
-  ownerPasswordHash: string;
   ownerEmail: string | null;
+  status?: CafeStatus;
+  planPriceCents?: number;
+  setupFeePaid?: boolean;
+  address?: string | null;
+  ownerName?: string | null;
+  ownerPhone?: string | null;
 };
 
 /** Raw rows for dashboards and reports (stats are computed in lib/stats.ts). */
@@ -198,7 +228,19 @@ export interface Repo {
   /** Rewards earned OR redeemed with a local date in [from, to]. */
   listRewardActivity(cafeId: string, from: string, to: string): Promise<RewardRow[]>;
   updateCafe(cafeId: string, patch: CafePatch): Promise<Cafe>;
+  /**
+   * An OWNER changes their rewards. Keeps the menu (admin-only) as it was.
+   * With Supabase this goes through the database function owner_update_program,
+   * which checks the owner's login itself.
+   */
+  ownerUpdateProgram(cafeId: string, program: Program): Promise<void>;
   createCafe(input: NewCafe): Promise<Cafe>;
+  /** Permanently deletes a café and ALL its data. */
+  deleteCafe(cafeId: string): Promise<void>;
+  /** Time of the most recent check-in (for "no check-ins in 3+ days" alerts). */
+  lastVisitAt(cafeId: string): Promise<string | null>;
+  audit(entry: AuditEntry): Promise<void>;
+  listAudit(filter: { cafeId?: string; limit?: number }): Promise<AuditEntry[]>;
   grantReward(cafeId: string, customerId: string, reward: { kind: Reward["kind"]; name: string; valueCents: number; costCents: number }, now: Date, localDate: string): Promise<void>;
   /** Returns true the first time it's called for (cafe, job, period); false afterwards. */
   claimJob(cafeId: string, job: string, period: string): Promise<boolean>;

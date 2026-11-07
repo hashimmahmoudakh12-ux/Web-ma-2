@@ -1,13 +1,13 @@
 /**
- * Cookie helpers for the three logins (see auth.ts). Server-only.
+ * Counter-tablet cookie helpers (see secrets.ts). Owner/admin logins live in lib/auth/.
  */
 import "server-only";
 import { cookies, headers } from "next/headers";
-import { makeToken, verifyToken } from "./auth";
+import { makeToken, verifyToken } from "./secrets";
 import type { Cafe } from "./data";
 
-type Kind = "counter" | "owner";
-const DAYS: Record<Kind | "admin", number> = { counter: 90, owner: 30, admin: 7 };
+type Kind = "counter";
+const DAYS: Record<Kind, number> = { counter: 90 };
 
 const cookieName = (kind: Kind, cafe: Cafe) => `streakify_${kind}_${cafe.slug}`;
 
@@ -33,16 +33,6 @@ export async function hasCafeAccess(kind: Kind, cafe: Cafe): Promise<boolean> {
 
 export async function revokeCafeAccess(kind: Kind, cafe: Cafe) {
   (await cookies()).delete(cookieName(kind, cafe));
-}
-
-export async function grantAdmin() {
-  await setCookie("streakify_admin", "admin", DAYS.admin);
-}
-export async function isAdmin(): Promise<boolean> {
-  return verifyToken((await cookies()).get("streakify_admin")?.value, "admin");
-}
-export async function revokeAdmin() {
-  (await cookies()).delete("streakify_admin");
 }
 
 /** Who is asking (for login throttling). */

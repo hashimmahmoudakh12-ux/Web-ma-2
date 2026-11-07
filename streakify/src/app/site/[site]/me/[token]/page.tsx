@@ -89,7 +89,7 @@ async function buildData(cafe: Cafe, token: string, site: string): Promise<AppDa
     siteKey: site,
     token,
     base,
-    cafe: { name: cafe.name, slug: cafe.slug, logoUrl: cafe.brand.logoUrl, primary: cafe.brand.colors.primary, isDemo: cafe.isDemo },
+    cafe: { name: cafe.name, slug: cafe.slug, logoUrl: cafe.brand.logoUrl, primary: cafe.brand.colors.primary, isDemo: cafe.isDemo, paused: cafe.status === "paused" || cafe.status === "cancelled" },
     me: { firstName: raw.firstName, referralCode: raw.referralCode },
     level: { name: p.level.name, icon: p.level.icon, perk: p.level.perk ?? null },
     next: p.next ? { name: p.next.name, icon: p.next.icon, xpToNext: p.xpToNext, reward: p.next.reward?.name ?? null } : null,

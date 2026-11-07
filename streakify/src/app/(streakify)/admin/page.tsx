@@ -1,158 +1,173 @@
 /**
- * MY ADMIN PAGE (only you): streakify.com/admin
- * All cafés in one place with this month's numbers, PDF reports,
- * monthly emails, café settings, and "add a café".
+ * YOUR ADMIN DASHBOARD (streakify.com/admin): every café at a glance.
  */
-import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { CafeLogo } from "@/components/CafeLogo";
+import { AppShell } from "@/components/shell/AppShell";
+import { getAuth, requireAdmin } from "@/lib/auth";
 import { getRepo } from "@/lib/data";
-import { twilioConfigured } from "@/lib/sms";
-import { pushConfigured } from "@/lib/push";
-import { appleWalletConfigured, googleWalletConfigured } from "@/lib/wallet";
 import { formatMoney } from "@/lib/money";
-import { monthlyStats } from "@/lib/report";
-import { isAdmin } from "@/lib/session";
-import { formatMonth, localDate, previousMonth } from "@/lib/time";
-import { adminLogout } from "./actions";
-import { AdminLogin, CafeSettingsForm, EmailReportButton, NewCafeForm, RunJobsButton } from "./Forms";
+import { pushConfigured } from "@/lib/push";
+import { twilioConfigured } from "@/lib/sms";
+import { localDate, monthRange } from "@/lib/time";
+import { appleWalletConfigured, googleWalletConfigured } from "@/lib/wallet";
+import { RunJobsButton } from "./AdminWidgets";
+import { ADMIN_NAV, StatusChip } from "./shared";
 
-export const metadata: Metadata = { title: "Streakify admin", robots: { index: false } };
-
-function Pill({ ok, label }: { ok: boolean; label: string }) {
-  return <span className={`rounded-full px-2 py-0.5 text-xs ${ok ? "bg-emerald-400/15 text-emerald-300" : "bg-white/10 text-white/50"}`}>{label}: {ok ? "on" : "off"}</span>;
+function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="card p-4">
+      <p className="text-sm text-brand-muted">{label}</p>
+      <p className="text-2xl font-bold tabular-nums">{value}</p>
+      {sub && <p className="text-xs text-brand-muted">{sub}</p>}
+    </div>
+  );
 }
 
-async function Admin() {
+/** Live café with no check-ins for 3+ days: something's probably wrong (tablet off?). */
+function isQuiet(cafe: { status: string; isDemo: boolean }, last: string | null) {
+  const live = cafe.status === "trial" || cafe.status === "active";
+  return live && !cafe.isDemo && (!last || Date.now() - new Date(last).getTime() > 3 * 86_400_000);
+}
+
+function ago(iso: string | null) {
+  if (!iso) return "never";
+  const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
+  if (h < 1) return "just now";
+  if (h < 24) return `${Math.floor(h)}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+async function Overview() {
   await connection();
-  if (!(await isAdmin())) {
-    if (process.env.NODE_ENV === "production" && !process.env.ADMIN_PASSWORD) {
-      return (
-        <div className="mx-auto mt-16 max-w-md space-y-3 rounded-2xl bg-white/5 p-6">
-          <h1 className="text-2xl font-bold">Admin is locked</h1>
-          <p className="text-white/70">
-            Add an <code>ADMIN_PASSWORD</code> environment variable in Vercel (Project → Settings → Environment Variables), then redeploy.
-          </p>
-          <a className="text-amber-300 underline" href="/api/health">Open the system check</a>
-        </div>
-      );
-    }
-    return <AdminLogin />;
-  }
+  const s = await requireAdmin();
   const repo = getRepo();
   const cafes = await repo.listCafes();
   const rows = await Promise.all(
     cafes.map(async (cafe) => {
-      const month = localDate(new Date(), cafe.timezone).slice(0, 7);
-      return { cafe, month, last: previousMonth(month), stats: await monthlyStats(cafe, month) };
+      const today = localDate(new Date(), cafe.timezone);
+      const { from, to } = monthRange(today);
+      const [visits, customers, rewards, last] = await Promise.all([
+        repo.listVisits(cafe.id, from, to),
+        repo.listCustomers(cafe.id),
+        repo.listRewardActivity(cafe.id, from, to),
+        repo.lastVisitAt(cafe.id),
+      ]);
+      const quiet = isQuiet(cafe, last);
+      return {
+        cafe,
+        customers: customers.length,
+        today: visits.filter((v) => v.localDate === today).length,
+        month: visits.length,
+        rewards: rewards.filter((r) => r.earnedLocalDate >= from).length,
+        last,
+        quiet,
+      };
     }),
   );
-  const totals = rows.reduce((t, r) => ({ visits: t.visits + r.stats.totalVisits, members: t.members + r.stats.totalMembers }), { visits: 0, members: 0 });
+  const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((a, r) => a + f(r), 0);
+  const mrr = cafes.filter((c) => c.status === "active").reduce((a, c) => a + c.planPriceCents, 0);
+  const auth = getAuth();
+  const pills: [string, boolean][] = [
+    ["Database", repo.kind === "supabase"],
+    ["Real logins + 2FA", auth.kind === "supabase"],
+    ["Email", Boolean(process.env.RESEND_API_KEY && process.env.REPORT_FROM_EMAIL)],
+    ["Texts", twilioConfigured()],
+    ["Push", pushConfigured()],
+    ["Apple Wallet", appleWalletConfigured()],
+    ["Google Wallet", googleWalletConfigured()],
+  ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 px-4 py-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <AppShell nav={ADMIN_NAV} who={s.user.email}>
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Streakify admin</h1>
-          <p className="text-white/60">{cafes.length} cafés · {totals.members} members · {totals.visits} visits this month</p>
+          <h1 className="text-3xl font-bold tracking-tight">All cafés</h1>
+          <p className="text-brand-muted">Everything at a glance. Cafés with no check-ins in 3+ days are flagged.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Pill ok={repo.kind === "supabase"} label="Database" />
-          <Pill ok={twilioConfigured()} label="Texts" />
-          <Pill ok={Boolean(process.env.RESEND_API_KEY && process.env.REPORT_FROM_EMAIL)} label="Email" />
-          <Pill ok={Boolean(process.env.TOAST_CLIENT_ID)} label="Toast" />
-          <Pill ok={pushConfigured()} label="Push" />
-          <Pill ok={appleWalletConfigured()} label="Apple Wallet" />
-          <Pill ok={googleWalletConfigured()} label="Google Wallet" />
-          <form action={adminLogout}><button className="ml-2 text-sm text-white/60">Log out</button></form>
-        </div>
-      </header>
+        <Link href="/admin/cafes/new" className="pressable rounded-xl bg-brand-primary px-4 py-2.5 font-semibold text-brand-on-primary">
+          + Add café
+        </Link>
+      </div>
       {repo.kind === "memory" && (
-        <p className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-200">
-          Demo storage: data lives in memory and resets when the server restarts. Connect Supabase before real customers use it.
+        <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          Demo storage: data and accounts live in memory and reset when the server restarts. Connect Supabase for real cafés (and 2FA).
         </p>
       )}
 
-      <div className="space-y-4">
-        {rows.map(({ cafe, month, last, stats }) => (
-          <section key={cafe.id} className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className="h-8 w-8 rounded-full border border-white/20" style={{ background: `linear-gradient(135deg, ${cafe.brand.colors.background} 50%, ${cafe.brand.colors.primary} 50%)` }} />
-                <div>
-                  <h2 className="text-xl font-semibold">
-                    {cafe.name} {cafe.isDemo && <span className="ml-1 rounded bg-teal-400/20 px-2 py-0.5 text-xs text-teal-200">DEMO</span>}
-                  </h2>
-                  <p className="text-sm text-white/50">{cafe.customDomain ?? `${cafe.slug}.<your domain>`} · {cafe.timezone}</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-sm">
-                <a className="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20" href={`/c/${cafe.slug}/counter`}>Counter</a>
-                <a className="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20" href={`/c/${cafe.slug}/owner`}>Owner dashboard</a>
-                <a className="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20" href={`/c/${cafe.slug}`}>Public page</a>
-              </div>
-            </div>
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-              {[
-                ["Visits " + formatMonth(month).split(" ")[0], String(stats.totalVisits)],
-                ["Members", String(stats.totalMembers)],
-                ["New members", String(stats.newMembers)],
-                ["Reward cost", formatMoney(stats.rewardCostCents, cafe.currency)],
-                ["Extra revenue (est.)", formatMoney(stats.extraRevenueCents, cafe.currency)],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded-lg bg-black/30 p-3">
-                  <dt className="text-white/50">{k}</dt>
-                  <dd className="text-lg font-semibold tabular-nums">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <a className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-black" href={`/api/report/${cafe.slug}/${last}`}>PDF {formatMonth(last)}</a>
-              <a className="rounded-lg bg-white/10 px-3 py-1.5 text-sm hover:bg-white/20" href={`/api/report/${cafe.slug}/${month}`}>PDF {formatMonth(month)} (so far)</a>
-              <EmailReportButton cafeId={cafe.id} month={last} label={`Email ${formatMonth(last)} report to owner`} />
-            </div>
-            <details className="mt-4">
-              <summary className="cursor-pointer text-sm text-white/70">Café settings (owner login, PIN, domain, Toast)</summary>
-              <div className="mt-3">
-                <CafeSettingsForm
-                  cafeId={cafe.id}
-                  ownerEmail={cafe.ownerEmail ?? ""}
-                  customDomain={cafe.customDomain ?? ""}
-                  timezone={cafe.timezone}
-                  posProvider={cafe.posProvider}
-                  toastRestaurantGuid={String(cafe.posConfig.restaurantGuid ?? "")}
-                  toastDiscountGuid={String(cafe.posConfig.streakRewardDiscountGuid ?? "")}
-                />
-              </div>
-            </details>
-          </section>
-        ))}
-      </div>
-
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <h2 className="mb-3 text-xl font-semibold">Add a café</h2>
-        <p className="mb-4 text-sm text-white/60">Starts with the standard reward ladder; the owner can change everything from their dashboard.</p>
-        <NewCafeForm />
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Tile label="Cafés" value={String(cafes.length)} sub={`${cafes.filter((c) => c.status === "active").length} active · ${cafes.filter((c) => c.status === "trial").length} trial`} />
+        <Tile label="Customers" value={sum((r) => r.customers).toLocaleString()} />
+        <Tile label="Check-ins today" value={String(sum((r) => r.today))} sub={`${sum((r) => r.month).toLocaleString()} this month`} />
+        <Tile label="Rewards given" value={String(sum((r) => r.rewards))} sub="this month" />
+        <Tile label="Your monthly revenue" value={formatMoney(mrr)} sub="active plans" />
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <h2 className="mb-1 text-xl font-semibold">Automations</h2>
-        <p className="mb-3 text-sm text-white/60">
-          Every day at 16:00 UTC: “streak ends tomorrow” texts to opted-in customers. On the 1st–3rd of each month: last month&apos;s leaderboard prize
-          and the PDF report emailed to each owner (once per month).
-        </p>
+      <section className="card overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="text-brand-muted">
+            <tr className="border-b border-brand-text/10">
+              <th className="p-3 font-normal">Café</th>
+              <th className="p-3 font-normal">Status</th>
+              <th className="p-3 text-right font-normal">Plan</th>
+              <th className="p-3 text-right font-normal">Check-ins (month)</th>
+              <th className="p-3 text-right font-normal">Customers</th>
+              <th className="p-3 font-normal">Last check-in</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.cafe.id} className="border-b border-brand-text/5 last:border-0 hover:bg-brand-text/[0.03]">
+                <td className="p-3">
+                  <Link href={`/admin/cafes/${r.cafe.id}`} className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ background: r.cafe.brand.colors.background }}>
+                      <CafeLogo name={r.cafe.name.slice(0, 1)} logoUrl={r.cafe.brand.logoUrl} size="sm" />
+                    </span>
+                    <span>
+                      <span className="block font-semibold">
+                        {r.cafe.name} {r.cafe.isDemo && <span className="ml-1 text-xs text-brand-muted">(demo)</span>}
+                      </span>
+                      <span className="text-xs text-brand-muted">{r.cafe.slug}</span>
+                    </span>
+                  </Link>
+                </td>
+                <td className="p-3">
+                  <StatusChip status={r.cafe.status} />
+                </td>
+                <td className="p-3 text-right tabular-nums">{r.cafe.planPriceCents ? `${formatMoney(r.cafe.planPriceCents)}/mo` : "—"}</td>
+                <td className="p-3 text-right tabular-nums">{r.month}</td>
+                <td className="p-3 text-right tabular-nums">{r.customers}</td>
+                <td className="p-3">
+                  {r.quiet ? <span className="rounded-full bg-red-500/15 px-2.5 py-0.5 text-xs font-semibold text-red-600 dark:text-red-300">⚠ {ago(r.last)}: check on them</span> : ago(r.last)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card space-y-3 p-5">
+        <h2 className="font-semibold">Connections</h2>
+        <div className="flex flex-wrap gap-2">
+          {pills.map(([k, on]) => (
+            <span key={k} className={`rounded-full px-3 py-1 text-xs ${on ? "bg-green-500/15 text-green-700 dark:text-green-300" : "bg-brand-text/10 text-brand-muted"}`}>
+              {k}: {on ? "on" : "off"}
+            </span>
+          ))}
+        </div>
+        <p className="text-sm text-brand-muted">Daily at 16:00 UTC: streak reminders. On the 1st–3rd: leaderboard prizes and monthly PDF reports to owners.</p>
         <RunJobsButton />
       </section>
-    </div>
+    </AppShell>
   );
 }
 
 export default function AdminPage() {
   return (
-    <main className="min-h-dvh bg-[#0b0b0c] text-neutral-100">
-      <Suspense fallback={<p className="p-8 text-white/50">Loading…</p>}>
-        <Admin />
-      </Suspense>
-    </main>
+    <Suspense fallback={<div className="min-h-dvh" />}>
+      <Overview />
+    </Suspense>
   );
 }

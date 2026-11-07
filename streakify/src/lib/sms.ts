@@ -64,7 +64,7 @@ export function reminderText(cafe: Cafe, c: Customer, atRiskCents: number, endsO
 /** Sends "your streak ends tomorrow" texts for one café. */
 export async function runStreakReminders(cafe: Cafe, now = new Date()) {
   const result = { checked: 0, sent: 0, dryRun: 0, failed: 0, skipped: 0, pushes: 0 };
-  if (!cafe.program.smsRemindersEnabled || cafe.isDemo) return result;
+  if (!cafe.program.smsRemindersEnabled || cafe.isDemo || cafe.status === "paused" || cafe.status === "cancelled") return result;
   const repo = getRepo();
   const all = await repo.listCustomers(cafe.id);
 

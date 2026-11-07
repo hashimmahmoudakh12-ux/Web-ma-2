@@ -21,7 +21,7 @@ export type AppData = {
   siteKey: string;
   token: string;
   base: string;
-  cafe: { name: string; slug: string; logoUrl: string | null; primary: string; isDemo: boolean };
+  cafe: { name: string; slug: string; logoUrl: string | null; primary: string; isDemo: boolean; paused: boolean };
   me: { firstName: string; referralCode: string };
   level: { name: string; icon: string; perk: string | null };
   next: { name: string; icon: string; xpToNext: number; reward: string | null } | null;
@@ -124,6 +124,11 @@ export function CustomerApp({ data }: { data: AppData }) {
       </header>
 
       <main key={tab} className="animate-fade mx-auto w-full max-w-lg flex-1 space-y-4 px-4 pb-28 pt-4">
+        {data.cafe.paused && (
+          <p className="card p-4 text-sm">
+            <strong>Rewards are paused at {data.cafe.name} for now.</strong> Your streak, rewards and savings are saved.
+          </p>
+        )}
         {tab === "home" && <HomeTab data={data} />}
         {tab === "badges" && <BadgesTab data={data} />}
         {tab === "passport" && <PassportTab data={data} />}

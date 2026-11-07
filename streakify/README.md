@@ -15,17 +15,25 @@ subdomain (`sanaacafe.streakify.com`), its own logo, colors and rewards, and its
 | 6 | Toast: background purchase verification after each check-in | `src/lib/pos/toast.ts` |
 | 🎮 | **Gamification**: XP & levels, streak flame, milestones, badges, drink passport, challenges, events, mystery dallah, referrals, squads | everywhere |
 | 📱 | **Apple-style app**: light/dark mode, installable to the Home Screen, push reminders, Apple & Google Wallet passes | `/me/<token>` |
+| 🔐 | **Logins & admin**: one sign-in page, admin with 2FA, owner accounts by invite only, database-level security, audit log, add-café wizard | `/login`, `/admin`, `/dashboard` |
 
 Phases 4–6 switch on when you add their keys (see `.env.example`). Until then emails/texts are logged, not sent, so nothing goes out by accident.
 
-### Logins (change them!)
-| Who | Where | Default |
+### Who signs in where
+| Who | Where | How |
 |---|---|---|
-| Counter tablet | `/counter` | Sana'a PIN `2580`, demo café needs none |
-| Café owner | `/owner` | Sana'a `sanaa-owner`, demo café is open |
-| You | `/admin` | `ADMIN_PASSWORD` env var (`admin` when running locally) |
+| You (the one admin) | `streakify.com/login` → `/admin` | email + password + **2FA code** |
+| Café owners & managers | `streakify.com/login` → `/dashboard` | email + password (you invite them) |
+| Counter tablet | `<café>.streakify.com/counter` | café PIN, once per tablet |
+| Customers | never sign in | tablet + their personal link |
 
-Change owner passwords and PINs from your admin page → café → *Café settings*.
+In **demo mode** (no Supabase yet) these test logins exist, and they reset when the server restarts:
+- admin: `admin@streakify.local` / `admin`; on Vercel, set `ADMIN_EMAIL` + `ADMIN_PASSWORD`.
+- Sana'a owner: `owner@sanaacafe.example` / `sanaa-owner`
+- demo café owner: `owner@harborbean.example` / `demo`
+- Sana'a counter PIN: `2580`
+
+Change PINs, owners and plans from Admin → café.
 
 ---
 
@@ -80,7 +88,7 @@ npm run lint
 ## 2. Connect the real database (Supabase)
 
 1. Create a project at supabase.com.
-2. Go to **SQL Editor**. Paste all of `supabase/migrations/0001_init.sql` and click **Run**. Then do the same with `0002_phases_2_to_6.sql` and `0003_gamification.sql`, in that order.
+2. Go to **SQL Editor**. Paste all of `supabase/migrations/0001_init.sql` and click **Run**. Then do the same with `0002_phases_2_to_6.sql`, `0003_gamification.sql` and `0004_auth_roles_rls.sql`, in that order.
    - Already ran 0001/0002 before? Just run 0003. Then load the new game settings into the existing cafés with `npm run db:seed -- --force`. This overwrites Sana'a's reward settings with the new defaults; customers are kept and old progress is converted to XP.
 3. Copy `.env.example` to `.env.local` and fill it in. You'll find the URL and **service_role** key under Project Settings → API. Generate a session secret with:
    ```bash
@@ -94,13 +102,35 @@ npm run lint
    ```bash
    npm run set-pin -- sanaacafe 4821
    ```
-6. Restart `npm run dev`. The yellow "in-memory" notice on the home page disappears.
+6. Restart `npm run dev`. The yellow "in-memory" notice on the admin page disappears.
+
+### Create your admin account (first time only)
+1. In Supabase → **Authentication → Sign In / Providers**:
+   - turn **off** "Allow new users to sign up" (nobody can create their own account);
+   - make sure **Email** is enabled.
+2. In Supabase → **Authentication → Multi-Factor**, make sure **TOTP (authenticator app)** is enabled.
+3. In `.env.local`, fill in:
+   - `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` (the same URL);
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`;
+   - `SUPABASE_SERVICE_ROLE_KEY`.
+4. Run this, with your own email:
+   ```bash
+   npm run create-admin -- you@yourdomain.com
+   ```
+   It prints a **temporary password** once. There can only be one admin. Running it again resets the password; `--replace` moves the admin to a new email.
+5. Open `/login` and sign in. You'll be sent to **Security** to scan a QR code with an authenticator app (Apple Passwords, Google Authenticator, 1Password). From then on every admin sign-in asks for the 6-digit code.
+6. In Admin → Security, click **Change my password** and replace the temporary one.
+7. Add each café with **Admin → Add café**. The owner gets an invite link to set their own password.
+   - With `RESEND_API_KEY` set, the invite is emailed.
+   - Without it, the link is shown on screen for you to send.
+
+> Lost your phone with the authenticator? Delete your TOTP factor in Supabase → Authentication → Users → your user. Then sign in and set 2FA up again.
 
 ## 3. Deploy (Vercel + GitHub)
 
 1. Import the GitHub repo in Vercel and set **Root Directory = `streakify`** (the repo root holds another website).
 2. Add the environment variables from `.env.example`:
-   - `NEXT_PUBLIC_ROOT_DOMAIN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`, `ADMIN_PASSWORD` and `CRON_SECRET`;
+   - `NEXT_PUBLIC_ROOT_DOMAIN`, `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET` and `CRON_SECRET`;
    - plus Resend, Twilio and Toast keys when you're ready;
    - plus the push keys (VAPID), Apple Wallet and Google Wallet keys. Each feature turns itself on once its keys exist; your admin page shows which are on.
 
@@ -256,8 +286,23 @@ npm run lint
 | `app/globals.css` (bottom) | The stepped mascot poses, film grain, vignette and candle flicker. |
 | `app/(streakify)/lab/*` | Preview pages: `/lab`, `/lab/film`, `/lab/moods`. |
 
+### Logins, roles & security (files)
+| File | In simple terms |
+|---|---|
+| `supabase/migrations/0004_auth_roles_rls.sql` | Profiles (admin/owner), the one-admin rule, Row Level Security (owners only see their own café), the owner-only rewards function, and the audit log. |
+| `src/lib/auth/index.ts` | The gatekeeper: `requireAdmin()` (login + 2FA), `requireOwnerCafe()`, `audit()`. Runs on the server for every page and action. |
+| `src/lib/auth/supabase.ts` | Real logins with Supabase Auth: passwords, 2FA, invite/reset links, team management. |
+| `src/lib/auth/local.ts` | Stand-in logins for demo mode (no Supabase). |
+| `src/proxy.ts` | Also keeps login sessions fresh, and sends old `/owner` links to `/dashboard`. |
+| `app/(streakify)/login`, `auth/*` | Sign-in, 2FA step, forgot password, invite/reset landing, set password. |
+| `app/(streakify)/admin/*` | Your admin area: overview, café pages, add-café wizard, activity log, security. |
+| `app/(streakify)/dashboard/*` | The owner's dashboard and rewards settings. |
+| `components/dashboard/*` | The dashboard, settings editor and delete-customer tool shared by owner and admin views. |
+| `scripts/create-admin.ts` | Creates or resets your admin login. |
+
 ## 7. Known limits
-- Wrong-password lockouts are tracked per server instance. For a big rollout, move them into the database or Vercel KV.
+- Wrong-password lockouts are tracked per server instance; Supabase adds its own login rate limits on top.
+- The Supabase login code (sign-in, 2FA, invites) follows Supabase's docs. The database security rules were tested on a real Postgres, but the full login flow hasn't run against a live Supabase project yet. Try it once on your project before inviting real owners.
 - Toast and Twilio code follows their docs but hasn't run against live accounts. Test with sandbox credentials first.
 - The profit view is an estimate: repeat visits × average order. It can't know which visits would have happened anyway.
 - Passport stamps are the honor system: the customer taps what they ordered on the tablet. Once Toast is connected, real order items can replace the taps.

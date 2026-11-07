@@ -1,6 +1,6 @@
 /** Tests for logins, stats math and the profit view. */
 import { describe, expect, it } from "vitest";
-import { hashSecret, makeToken, verifySecret, verifyToken } from "./auth";
+import { hashSecret, makeToken, verifySecret, verifyToken } from "./secrets";
 import { demoCafe } from "./demo/cafes";
 import { generateDemoData } from "./demo/generate";
 import { parseBrand } from "./brand";
@@ -36,7 +36,7 @@ describe("stats / profit view", () => {
   const program = parseProgram(demoCafe.program);
   const cafe: Cafe = {
     id: "c1", slug: "demo", name: "Demo", customDomain: null, timezone: "America/New_York", currency: "USD", isDemo: true,
-    brand: parseBrand(demoCafe.brand), program, counterPinHash: null, ownerPasswordHash: null, ownerEmail: null, posProvider: "none", posConfig: {},
+    brand: parseBrand(demoCafe.brand), program, counterPinHash: null, ownerEmail: null, posProvider: "none", posConfig: {}, status: "active", planPriceCents: 0, setupFeePaid: false, address: null, ownerName: null, ownerPhone: null,
   };
 
   it("counts repeat visits and reward cost", () => {

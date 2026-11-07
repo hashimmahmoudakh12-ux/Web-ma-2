@@ -23,7 +23,7 @@
  */
 import "server-only";
 import { createHmac } from "node:crypto";
-import { secret } from "../auth";
+import { secret } from "../secrets";
 import http2 from "node:http2";
 import { PKPass } from "passkit-generator";
 import type { Cafe, Customer } from "../data";

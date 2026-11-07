@@ -7,7 +7,8 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ForceDark } from "@/components/CafeTheme";
-import { getRepo } from "@/lib/data";
+import { getRepo, isLive } from "@/lib/data";
+import { CafeLogo } from "@/components/CafeLogo";
 import { SHOWCASE } from "@/lib/demo/generate";
 import { monthlyLeaderboard } from "@/lib/leaderboard";
 import { privacyNotice, smsConsentText } from "@/lib/privacy";
@@ -21,6 +22,17 @@ async function CounterLoader({ params }: PageProps<"/site/[site]/counter">) {
   const { site } = await params;
   const cafe = await resolveCafe(site);
   if (!cafe) notFound();
+  if (!isLive(cafe)) {
+    // Paused by Streakify (e.g. billing). All customer data is kept.
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
+        <ForceDark brand={cafe.brand} />
+        <CafeLogo name={cafe.name} logoUrl={cafe.brand.logoUrl} size="lg" />
+        <h1 className="text-4xl font-bold">Rewards paused</h1>
+        <p className="max-w-md text-xl text-brand-muted">Check-ins are paused for now. Every customer&apos;s streak, rewards and savings are safe and will be here when rewards come back.</p>
+      </main>
+    );
+  }
   const unlocked = await isCounterUnlocked(site);
   const leaderboard = unlocked ? await monthlyLeaderboard(cafe) : [];
   const base = await cafeBase();

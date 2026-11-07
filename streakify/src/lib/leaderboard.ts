@@ -4,13 +4,12 @@
  * It "resets" automatically because it only counts this month's visits.
  */
 import "server-only";
-import { getRepo, type Cafe } from "./data";
+import { getRepo, type Cafe, type Repo } from "./data";
 import { localDate, monthRange } from "./time";
 
 export type LeaderboardEntry = { rank: number; customerId: string; firstName: string; visits: number };
 
-export async function monthlyLeaderboard(cafe: Cafe, now = new Date(), month?: string, limit = 10): Promise<LeaderboardEntry[]> {
-  const repo = getRepo();
+export async function monthlyLeaderboard(cafe: Cafe, now = new Date(), month?: string, limit = 10, repo: Repo = getRepo()): Promise<LeaderboardEntry[]> {
   const { from, to } = monthRange(month ? `${month}-01` : localDate(now, cafe.timezone));
   const [visits, customers] = await Promise.all([repo.listVisits(cafe.id, from, to), repo.listCustomers(cafe.id)]);
   const optedIn = new Map(customers.filter((c) => c.leaderboardOptIn).map((c) => [c.id, c.firstName]));

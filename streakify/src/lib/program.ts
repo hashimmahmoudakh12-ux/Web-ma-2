@@ -19,6 +19,7 @@ export const rewardSpecSchema = z.object({
   name: z.string().min(1), // what the customer sees: "Free pastry"
   valueCents: money, // menu price = what the customer saves
   costCents: money, // ingredient cost = what it costs the café (profit view)
+  posLabel: z.string().max(40).optional(), // Toast discount button the cashier presses
 });
 export type RewardSpec = z.infer<typeof rewardSpecSchema>;
 
@@ -71,6 +72,8 @@ export const menuItemSchema = z.object({
   name: z.string().min(1),
   categoryId: z.string(),
   icon: z.string().default("☕"),
+  priceCents: money.default(0),
+  costCents: money.default(0), // ingredient cost
 });
 export type MenuCategory = z.infer<typeof menuCategorySchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;

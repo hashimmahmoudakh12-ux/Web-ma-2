@@ -7,11 +7,12 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { seedCafes } from "../demo/cafes";
 import { generateDemoData } from "../demo/generate";
 import { parseBrand } from "../brand";
-import { parseProgram } from "../program";
+import { parseProgram, type Program } from "../program";
 import { newStreakState } from "../streak/engine";
-import { hashSecret } from "../auth";
+import { hashSecret } from "../secrets";
 import {
   type Cafe,
+  type AuditEntry,
   type CafePatch,
   type CustomerWrite,
   type PushSubscriptionRow,
@@ -43,12 +44,13 @@ type Db = {
   visits: StoredVisit[];
   sms: StoredSms[];
   jobs: Set<string>;
+  audit: AuditEntry[];
 };
 
 const g = globalThis as unknown as { __streakifyMemoryDb?: Db };
 
 function seedDb(): Db {
-  const db: Db = { cafes: [], customers: [], rewards: [], visits: [], sms: [], jobs: new Set(), squads: [], push: [], wallet: [] };
+  const db: Db = { cafes: [], customers: [], rewards: [], visits: [], sms: [], jobs: new Set(), squads: [], push: [], wallet: [], audit: [] };
   g.__streakifyMemoryDb = db;
   for (const seed of seedCafes) {
     const cafe: Cafe = {
@@ -62,10 +64,15 @@ function seedDb(): Db {
       brand: parseBrand(seed.brand),
       program: parseProgram(seed.program),
       counterPinHash: hashSecret(seed.counterPin),
-      ownerPasswordHash: hashSecret(seed.ownerPassword),
       ownerEmail: seed.ownerEmail,
       posProvider: "none",
       posConfig: {},
+      status: seed.status,
+      planPriceCents: seed.planPriceCents,
+      setupFeePaid: false,
+      address: null,
+      ownerName: null,
+      ownerPhone: null,
     };
     db.cafes.push(cafe);
     if (cafe.isDemo) loadDemo(db, cafe.id, generateDemoData(cafe.program, cafe.timezone));
@@ -397,15 +404,64 @@ export class MemoryRepo implements Repo {
     if (patch.customDomain && this.db.cafes.some((x) => x.id !== cafeId && x.customDomain === patch.customDomain)) {
       throw new Error("Another café already uses that domain");
     }
+    if (patch.slug && this.db.cafes.some((x) => x.id !== cafeId && x.slug === patch.slug)) throw new Error("That subdomain is already taken");
     Object.assign(c, structuredClone(patch));
     return structuredClone(c);
   }
 
+  async ownerUpdateProgram(cafeId: string, program: Program) {
+    const c = this.cafe(cafeId);
+    c.program = { ...structuredClone(program), menu: c.program.menu };
+  }
+
   async createCafe(input: NewCafe) {
     if (this.db.cafes.some((c) => c.slug === input.slug)) throw new Error("That subdomain is already taken");
-    const cafe: Cafe = { ...structuredClone(input), id: randomUUID(), customDomain: null, posProvider: "none", posConfig: {} };
+    const cafe: Cafe = {
+      ...structuredClone(input),
+      id: randomUUID(),
+      customDomain: null,
+      posProvider: "none",
+      posConfig: {},
+      status: input.status ?? "trial",
+      planPriceCents: input.planPriceCents ?? 0,
+      setupFeePaid: input.setupFeePaid ?? false,
+      address: input.address ?? null,
+      ownerName: input.ownerName ?? null,
+      ownerPhone: input.ownerPhone ?? null,
+    };
     this.db.cafes.push(cafe);
     return structuredClone(cafe);
+  }
+
+  async deleteCafe(cafeId: string) {
+    const db = this.db;
+    const ids = new Set(db.customers.filter((c) => c.cafeId === cafeId).map((c) => c.id));
+    db.cafes = db.cafes.filter((c) => c.id !== cafeId);
+    db.customers = db.customers.filter((c) => c.cafeId !== cafeId);
+    db.visits = db.visits.filter((v) => v.cafeId !== cafeId);
+    db.rewards = db.rewards.filter((r) => !ids.has(r.customerId));
+    db.squads = db.squads.filter((q) => q.cafeId !== cafeId);
+    db.push = db.push.filter((x) => x.cafeId !== cafeId);
+    db.sms = db.sms.filter((x) => x.cafeId !== cafeId);
+  }
+
+  async lastVisitAt(cafeId: string) {
+    let last: string | null = null;
+    for (const v of this.db.visits) if (v.cafeId === cafeId && (!last || v.createdAt > last)) last = v.createdAt;
+    return last;
+  }
+
+  async audit(entry: AuditEntry) {
+    this.db.audit.push({ ...entry, id: String(this.db.audit.length + 1), at: new Date().toISOString() });
+    if (this.db.audit.length > 5000) this.db.audit.splice(0, 1000);
+  }
+
+  async listAudit(filter: { cafeId?: string; limit?: number }) {
+    return this.db.audit
+      .filter((a) => !filter.cafeId || a.cafeId === filter.cafeId)
+      .slice(-(filter.limit ?? 50))
+      .reverse()
+      .map((a) => structuredClone(a));
   }
 
   async claimJob(cafeId: string, job: string, period: string) {

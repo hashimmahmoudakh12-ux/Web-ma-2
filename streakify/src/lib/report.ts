@@ -4,14 +4,13 @@
  */
 import "server-only";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { getRepo, type Cafe } from "./data";
+import { getRepo, type Cafe, type Repo } from "./data";
 import { monthlyLeaderboard } from "./leaderboard";
 import { formatMoney } from "./money";
 import { KIND_LABELS, computeStats, type CafeStats } from "./stats";
 import { formatMonth, formatShortDay, monthRange } from "./time";
 
-export async function monthlyStats(cafe: Cafe, month: string): Promise<CafeStats> {
-  const repo = getRepo();
+export async function monthlyStats(cafe: Cafe, month: string, repo: Repo = getRepo()): Promise<CafeStats> {
   const { from, to } = monthRange(`${month}-01`);
   const [customers, visits, rewards] = await Promise.all([
     repo.listCustomers(cafe.id),
@@ -30,9 +29,9 @@ function hexToRgb(hex: string) {
 const safe = (s: string) =>
   s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-").replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
 
-export async function renderMonthlyReport(cafe: Cafe, month: string): Promise<Uint8Array> {
-  const stats = await monthlyStats(cafe, month);
-  const board = await monthlyLeaderboard(cafe, new Date(), month, 5);
+export async function renderMonthlyReport(cafe: Cafe, month: string, repo: Repo = getRepo()): Promise<Uint8Array> {
+  const stats = await monthlyStats(cafe, month, repo);
+  const board = await monthlyLeaderboard(cafe, new Date(), month, 5, repo);
   const money = (c: number) => formatMoney(c, cafe.currency);
 
   const pdf = await PDFDocument.create();
